@@ -1,5 +1,7 @@
 import json
 import time
+from collections import abc
+from keyword import iskeyword
 from urllib import parse
 
 import requests
@@ -27,6 +29,7 @@ class OrderView:
     """生成演出订单url"""
 
     def __init__(self):
+        self._views = {}
         self.url = ("https://detail.damai.cn/subpage?itemId={}&apiVersion=2.0"
                     "&dmChannel=pc@damai_pc&bizCode=ali.china.damai&scenario=itemsku"
                     "&dataType=&dataId={}&privilegeActId=&callback=__jp0")
@@ -35,16 +38,14 @@ class OrderView:
             "accept-language": "zh,en-US;q=0.9,en;q=0.8,zh-CN;q=0.7",
             "cache-control": "no-cache",
             "pragma": "no-cache",
-            "referer": "https://detail.damai.cn/item.htm?id=715121254118",
+            "referer": "https://search.damai.cn/search.htm",
             "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
                            " (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36")
         }
 
-    def _make_perform_request(self, id_, perform_id=''):
-        response = requests.get(self.url.format(id_, perform_id), headers=self.headers)
-        response.raise_for_status()
-        data = json.loads(response.text.replace("__jp0(", "").strip(')'))
-        return data
+    @property
+    def views(self):
+        return self._views
 
     def get_calendar(self, id_):
         data = self._make_perform_request(id_)
@@ -59,18 +60,25 @@ class OrderView:
         sku_list = data.get("perform", {}).get("skuList", [])
         return [
             dict(itemId=sku.get("itemId"), skuId=sku.get("skuId"),
-                 priceName=sku.get("priceName"), price=sku.get("price"))
+                 priceName=sku.get("priceName"), price=sku.get("price")
+                 )
             for sku in sku_list
         ]
 
-    def show_all_views(self, id_):
-        views = []
+    def _make_perform_request(self, id_, perform_id=''):
+        response = requests.get(self.url.format(id_, perform_id), headers=self.headers)
+        response.raise_for_status()
+        data = json.loads(response.text.replace("__jp0(", "").strip(')'))
+        return data
+
+    def add(self, id_):
+        views = {}
         for calendar in self.get_calendar(id_):
             key = calendar["performName"].split()[0]
-            value = {self.get_sku_list(id_, calendar["performId"])}
-            views.append({key: value})
-            time.sleep(1)
-        return views
+            value = self.get_sku_list(id_, calendar["performId"])
+            views[key] = value
+            time.sleep(0.5)
+        self._views[id_] = FrozenJSON(views)
 
     @staticmethod
     def make_order_url(id_, sku_id, num_tickets):
@@ -81,5 +89,33 @@ class OrderView:
         params = {'buyParam': buy_param, 'buyNow': "true", 'privilegeActId': ""}
         return f'{url}{ex_params_str}&{parse.urlencode(params)}'
 
-# p = OrderView()
-# print(p.show_all_views(719062769469))
+
+class FrozenJSON:
+    """一个只读接口，使用属性表示法访问 JSON 类对象"""
+
+    def __new__(cls, arg):
+        if isinstance(arg, abc.Mapping):
+            return super().__new__(cls)
+        elif isinstance(arg, abc.MutableSequence):
+            return [cls(item) for item in arg]
+        else:
+            return arg
+
+    def __init__(self, mapping):
+        self.__data = {}
+        for key, value in mapping.items():
+            if iskeyword(key):
+                key += '_'
+            self.__data[key] = value
+
+    def __getattr__(self, name):
+        if hasattr(self.__data, name):
+            return getattr(self.__data, name)
+        else:
+            return FrozenJSON(self.__data[name])
+
+    def __getitem__(self, item):
+        if item in self.__data:
+            return self.__data[item]
+
+
