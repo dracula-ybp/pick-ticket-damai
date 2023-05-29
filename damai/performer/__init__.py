@@ -1,9 +1,11 @@
 import asyncio
+import time
 import tkinter
 
 import requests
 from pyppeteer.launcher import connect
 from pyppeteer.page import Page
+from pyppeteer.errors import TimeoutError
 
 
 class Performance:
@@ -14,10 +16,9 @@ class Performance:
     """
 
     def __init__(self, **config):
-        self.url = "https://detail.damai.cn/item.htm?id={}"
         asyncio.get_event_loop().run_until_complete(self.init_browser(**config))
 
-    async def init_browser(self, **kw_config) -> None:
+    async def init_browser(self, **kw_config):
         """初始化配置"""
         connect_params = {
             'browserWSEndpoint': get_web_socket_debugger_url(),
@@ -30,21 +31,34 @@ class Performance:
         pages = await self.browser.pages()
         return pages[0]
 
-    async def place_order(self, url, page: Page = None, ticket_num: int = 1):
+    async def place_order(self, url, page, ticket_num: int = 1):
         """选取实名观影人，提交订单"""
-        page = page or await self.page
-        await asyncio.wait([
-            page.goto(url),
-            page.waitForNavigation(),
-        ])
-        await page.waitFor(850)
-        items = await page.querySelectorAll('i.iconfont')
-        for num in range(0, ticket_num):
-            await items[num].click()
+        print(url)
+        page = page or self.page
+        page: Page = await page() if callable(page) else await page
+        num = 60 * 20
+        start = time.time()
+        while True:
+            await asyncio.wait([page.goto(url), page.waitForNavigation()])
+            try:
+                await page.waitForSelector('i.iconfont', timeout=3000)
+            except TimeoutError:
+                print(f"<title>{await page.title()}</title>")
+                break
 
-        await page.waitFor(300)
-        items = await page.querySelectorAll('#dmOrderSubmitBlock_DmOrderSubmitBlock div[view-name=TextView]')
-        await items[-1].click()
+            items = await page.querySelectorAll('i.iconfont')
+            for num in range(0, ticket_num):
+                await items[num].click()
+
+            await page.waitFor(500)
+            items = await page.querySelectorAll('#dmOrderSubmitBlock_DmOrderSubmitBlock div[view-name=TextView]')
+            await items[-1].click()
+
+            await page.waitForNavigation()
+            print(f"<title>{await page.title()}</title>")
+            if await page.title() == "payment" or time.time() - start > num:
+                break
+        await page.close()
 
     @property
     def window_size(self):
@@ -62,4 +76,3 @@ def get_web_socket_debugger_url():
         raise SystemExit('检查是否已经配置或开启调式谷歌浏览器')
     else:
         return response.json()["webSocketDebuggerUrl"]
-

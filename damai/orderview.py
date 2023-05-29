@@ -1,7 +1,6 @@
 import json
 import time
-from collections import abc
-from keyword import iskeyword
+
 from urllib import parse
 
 import requests
@@ -57,10 +56,13 @@ class OrderView:
 
     def get_sku_list(self, id_, perform_id=''):
         data = self._make_perform_request(id_, perform_id)
-        sku_list = data.get("perform", {}).get("skuList", [])
+        perform = data.get("perform", {})
+        sku_list = perform.get("skuList", [])
         return [
             dict(itemId=sku.get("itemId"), skuId=sku.get("skuId"),
-                 priceName=sku.get("priceName"), price=sku.get("price")
+                 priceName=sku.get("priceName"), price=sku.get("price"),
+                 performName=perform.get("performName"),
+                 performBeginDTStr=perform.get("performBeginDTStr"),
                  )
             for sku in sku_list
         ]
@@ -71,14 +73,12 @@ class OrderView:
         data = json.loads(response.text.replace("__jp0(", "").strip(')'))
         return data
 
-    def add(self, id_):
-        views = {}
+    def add(self, id_, alias=None):
+        views = []
         for calendar in self.get_calendar(id_):
-            key = calendar["performName"].split()[0]
-            value = self.get_sku_list(id_, calendar["performId"])
-            views[key] = value
+            views.append(self.get_sku_list(id_, calendar["performId"]))
             time.sleep(0.5)
-        self._views[id_] = FrozenJSON(views)
+        self._views[alias or id_] = views
 
     @staticmethod
     def make_order_url(id_, sku_id, num_tickets):
@@ -88,34 +88,5 @@ class OrderView:
         buy_param = f'{id_}_{num_tickets}_{sku_id}'
         params = {'buyParam': buy_param, 'buyNow': "true", 'privilegeActId': ""}
         return f'{url}{ex_params_str}&{parse.urlencode(params)}'
-
-
-class FrozenJSON:
-    """一个只读接口，使用属性表示法访问 JSON 类对象"""
-
-    def __new__(cls, arg):
-        if isinstance(arg, abc.Mapping):
-            return super().__new__(cls)
-        elif isinstance(arg, abc.MutableSequence):
-            return [cls(item) for item in arg]
-        else:
-            return arg
-
-    def __init__(self, mapping):
-        self.__data = {}
-        for key, value in mapping.items():
-            if iskeyword(key):
-                key += '_'
-            self.__data[key] = value
-
-    def __getattr__(self, name):
-        if hasattr(self.__data, name):
-            return getattr(self.__data, name)
-        else:
-            return FrozenJSON(self.__data[name])
-
-    def __getitem__(self, item):
-        if item in self.__data:
-            return self.__data[item]
 
 
