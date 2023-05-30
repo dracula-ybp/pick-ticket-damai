@@ -1,43 +1,61 @@
-import asyncio
-from pyppeteer import launch
+
+import logging
+import tkinter as tk
 
 
-class PagePool:
-    def __init__(self, pool_size=5):
-        self.pool_size = pool_size
-        self.pool = asyncio.LifoQueue(maxsize=pool_size)
-        self.browser = None
+class TkinterTextHandler(logging.Handler):
+    """Custom logging handler that writes log messages to a Tkinter Text widget"""
 
-    async def get_page(self):
-        if self.pool.empty():
-            return await self.browser.newPage()
-        return await self.pool.get()
+    def __init__(self, text_widget):
+        super().__init__()
+        self.text_widget = text_widget
 
-    async def release_page(self, page):
-        await self.pool.put(page)
+    def emit(self, record):
+        # Get the log message and append it to the widget
+        msg = self.format(record)
+        self.text_widget.insert(tk.END, msg + "\n")
+        # Scroll to the bottom of the widget
+        self.text_widget.see(tk.END)
 
 
-# 示例用法
-async def main():
-    pool = PagePool(pool_size=3)
+class App(tk.Frame):
+    def __init__(self, master=None):
+        super().__init__(master)
 
-    # 初始化池
-    await pool.initialize()
+        self.example_frame = tk.Frame(master)
+        self.example_frame.pack(expand=True, fill='both')
 
-    # 使用页面
-    page1 = await pool.get_page()
-    # 使用 page1 执行任务
-    await page1.goto('https://www.example.com')
-    # 任务完成后释放页面
-    await pool.release_page(page1)
+        self.log_text = tk.Text(self.example_frame)
+        self.log_text.pack(expand=True, fill='both')
 
-    # 获取另一个页面并执行任务
-    page2 = await pool.get_page()
-    await page2.goto('https://www.example.com')
-    await pool.release_page(page2)
+        # Create a custom logger
+        logger = logging.getLogger("myapp")
+        logger.setLevel(logging.DEBUG)
 
-    # 关闭池
-    await pool.close()
+        # Create a formatter
+        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
 
-# 运行示例
-asyncio.get_event_loop().run_until_complete(main())
+        # Create a StreamHandler and set the formatter
+        stream_handler = logging.StreamHandler()
+        stream_handler.setFormatter(formatter)
+
+        # Create a TkinterTextHandler and set the formatter
+        tkinter_handler = TkinterTextHandler(self.log_text)
+        tkinter_handler.setFormatter(formatter)
+
+        # Add the handlers to the logger
+        logger.addHandler(stream_handler)
+        logger.addHandler(tkinter_handler)
+
+        # Log some messages
+        logger.debug("This is a debug message")
+        logger.info("This is an info message")
+        logger.warning("This is a warning message")
+        logger.error("This is an error message")
+        logger.critical("This is a critical message")
+
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = App(root)
+    app.mainloop()

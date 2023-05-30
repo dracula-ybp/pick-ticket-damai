@@ -29,9 +29,12 @@ class OrderView:
 
     def __init__(self):
         self._views = {}
-        self.url = ("https://detail.damai.cn/subpage?itemId={}&apiVersion=2.0"
-                    "&dmChannel=pc@damai_pc&bizCode=ali.china.damai&scenario=itemsku"
-                    "&dataType=&dataId={}&privilegeActId=&callback=__jp0")
+        self.url = ("https://detail.damai.cn/subpage?itemId={}&dataId={}&"
+                    "dataType=2&apiVersion=2.0&dmChannel=pc@damai_pc&bizCode=ali.china.damai"
+                    "&scenario=itemsku&privilegeActId=")
+        # self.url = ("https://detail.damai.cn/subpage?itemId={}&apiVersion=2.0"
+        #             "&dmChannel=pc@damai_pc&bizCode=ali.china.damai&scenario=itemsku"
+        #             "&dataType=&dataId={}&privilegeActId=&callback=__jp2")
         self.headers = {
             "accept-encoding": "gzip, deflate, br",
             "accept-language": "zh,en-US;q=0.9,en;q=0.8,zh-CN;q=0.7",
@@ -70,7 +73,7 @@ class OrderView:
     def _make_perform_request(self, id_, perform_id=''):
         response = requests.get(self.url.format(id_, perform_id), headers=self.headers)
         response.raise_for_status()
-        data = json.loads(response.text.replace("__jp0(", "").strip(')'))
+        data = json.loads(response.text.replace("null(", "").strip(')'))
         return data
 
     def add(self, id_, alias=None):
@@ -88,5 +91,3 @@ class OrderView:
         buy_param = f'{id_}_{num_tickets}_{sku_id}'
         params = {'buyParam': buy_param, 'buyNow': "true", 'privilegeActId': ""}
         return f'{url}{ex_params_str}&{parse.urlencode(params)}'
-
-

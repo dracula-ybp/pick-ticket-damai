@@ -2,7 +2,7 @@ from typing import Union, Optional
 
 from damai.performer import Performance
 from damai.orderview import OrderView
-from tasks import TaskManager
+from damai.tasks import TaskManager
 
 
 class ExecutionEngine:

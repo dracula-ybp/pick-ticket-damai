@@ -44,7 +44,7 @@ class Performance:
                 await page.waitForSelector('i.iconfont', timeout=3000)
             except TimeoutError:
                 print(f"<title>{await page.title()}</title>")
-                break
+                continue
 
             items = await page.querySelectorAll('i.iconfont')
             for num in range(0, ticket_num):
@@ -54,11 +54,11 @@ class Performance:
             items = await page.querySelectorAll('#dmOrderSubmitBlock_DmOrderSubmitBlock div[view-name=TextView]')
             await items[-1].click()
 
-            await page.waitForNavigation()
+            # await page.waitForNavigation()
             print(f"<title>{await page.title()}</title>")
             if await page.title() == "payment" or time.time() - start > num:
                 break
-        await page.close()
+        # await page.close()
 
     @property
     def window_size(self):
