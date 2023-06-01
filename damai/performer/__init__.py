@@ -15,15 +15,12 @@ class Performance:
     `place_order`函数，利用接口先生成订单url，再调用`place_order`。
     """
 
-    def __init__(self, **config):
-        asyncio.get_event_loop().run_until_complete(self.init_browser(**config))
-
-    async def init_browser(self, **kw_config):
+    async def init_browser(self, **config):
         """初始化配置"""
         connect_params = {
             'browserWSEndpoint': get_web_socket_debugger_url(),
         }
-        self.browser = await connect(connect_params, **kw_config)
+        self.browser = await connect(connect_params, **config)
 
     @property
     async def page(self) -> Page:
@@ -34,9 +31,8 @@ class Performance:
     async def place_order(self, url, page, ticket_num: int = 1):
         """选取实名观影人，提交订单"""
         print(url)
-        page = page or self.page
         page: Page = await page() if callable(page) else await page
-        num = 60 * 20
+        nums = 60 * 20
         start = time.time()
         while True:
             await asyncio.wait([page.goto(url), page.waitForNavigation()])
@@ -56,9 +52,10 @@ class Performance:
 
             # await page.waitForNavigation()
             print(f"<title>{await page.title()}</title>")
-            if await page.title() == "payment" or time.time() - start > num:
+            if await page.title() == "payment" or time.time() - start > nums:
                 break
-        # await page.close()
+            await page.waitFor(3000)
+        await page.close()
 
     @property
     def window_size(self):

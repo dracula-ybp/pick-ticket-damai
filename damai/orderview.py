@@ -49,26 +49,24 @@ class OrderView:
     def views(self):
         return self._views
 
-    def get_calendar(self, id_):
+    def get_calendar_id_list(self, id_):
         data = self._make_perform_request(id_)
         calendar = data.get("performCalendar", {}).get("performViews", [])
-        return [
-            dict(performId=view.get("performId"), performName=view.get("performName"))
-            for view in calendar
-        ]
+        return [view.get("performId") for view in calendar]
 
-    def get_sku_list(self, id_, perform_id=''):
+    def get_sku_info(self, id_, perform_id=''):
         data = self._make_perform_request(id_, perform_id)
         perform = data.get("perform", {})
         sku_list = perform.get("skuList", [])
-        return [
-            dict(itemId=sku.get("itemId"), skuId=sku.get("skuId"),
-                 priceName=sku.get("priceName"), price=sku.get("price"),
-                 performName=perform.get("performName"),
-                 performBeginDTStr=perform.get("performBeginDTStr"),
-                 )
-            for sku in sku_list
-        ]
+        date = perform.get("performName")
+        item = dict(performName=date,
+                    performBeginDTStr=perform.get("performBeginDTStr"),
+                    limitQuantity=perform.get("limitQuantity"))
+        li = [dict(itemId=sku.get("itemId"), skuId=sku.get("skuId"),
+                   priceName=sku.get("priceName"), price=sku.get("price"))
+              for sku in sku_list]
+        item["skuList"] = li
+        return date.split()[0], item
 
     def _make_perform_request(self, id_, perform_id=''):
         response = requests.get(self.url.format(id_, perform_id), headers=self.headers)
@@ -77,9 +75,10 @@ class OrderView:
         return data
 
     def add(self, id_, alias=None):
-        views = []
-        for calendar in self.get_calendar(id_):
-            views.append(self.get_sku_list(id_, calendar["performId"]))
+        views = {}
+        for calendar in self.get_calendar_id_list(id_):
+            date, info = self.get_sku_info(id_, calendar)
+            views[date] = info
             time.sleep(0.5)
         self._views[alias or id_] = views
 
@@ -91,3 +90,8 @@ class OrderView:
         buy_param = f'{id_}_{num_tickets}_{sku_id}'
         params = {'buyParam': buy_param, 'buyNow': "true", 'privilegeActId': ""}
         return f'{url}{ex_params_str}&{parse.urlencode(params)}'
+
+
+# o = OrderView()
+# o.add(708979912567)
+# print(o.views)

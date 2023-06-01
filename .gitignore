@@ -3,4 +3,6 @@ __pycache__/
 build/
 project.egg-info/
 setup.py
+dist/
+ob.spec
 
