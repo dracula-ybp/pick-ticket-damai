@@ -90,8 +90,3 @@ class OrderView:
         buy_param = f'{id_}_{num_tickets}_{sku_id}'
         params = {'buyParam': buy_param, 'buyNow': "true", 'privilegeActId': ""}
         return f'{url}{ex_params_str}&{parse.urlencode(params)}'
-
-
-# o = OrderView()
-# o.add(708979912567)
-# print(o.views)

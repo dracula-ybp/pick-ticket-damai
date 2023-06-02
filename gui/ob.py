@@ -1,4 +1,5 @@
 import asyncio
+import sys
 import threading
 import tkinter as tk
 from datetime import datetime
@@ -25,15 +26,10 @@ class App(tk.Tk):
         self.main_frame.pack(side='right', fill='both', expand=True)
         ttk.Label(self.main_frame, text='Hello Word', font=('Arial', 30)).pack()
 
-    def custom_destroy(self):
-        self.quit()  # 停止事件循环
-        self.destroy()
-        raise KeyboardInterrupt()
-
     def navigation(self):
         """侧边导航栏"""
         table = dict(
-            抢票需知=self.need_to_know, 选票=self.choose_ticket, 任务视图=self.show_tasks
+            抢票须知=self.need_to_know, 选票=self.choose_ticket, 任务视图=self.show_tasks
         )
         sidebar = tk.Frame(self, bg='#f4f4f4', width=100, height=self.winfo_screenheight())
         style = ttk.Style()
@@ -80,7 +76,8 @@ class App(tk.Tk):
         self.log_text.pack(side='bottom', fill='x', padx=20, pady=20)
 
     def show_menu(self, entry):
-        # 715121254118
+        # 721216860314
+        # 202306021055
         _id = entry.get()
         if not is_integer(_id):
             messagebox.showerror(message='演出ID错误')
@@ -117,6 +114,8 @@ class App(tk.Tk):
             obj.num_ent.pack(padx=10, pady=10, side="left")
             tk.Label(combobox_frame, text=f'每笔订单限购{data[value]["limitQuantity"]}张', font=('楷体', 8),
                      foreground="#c51538").pack(padx=10, pady=10, side="left")
+            tk.Button(combobox_frame, text="添加至待抢列表", font=('方正姚体', 10), bg="#88dba3",
+                      command=lambda: self.add_ticket_list(entry)).pack(side="right", padx=70, pady=10)
 
         data: dict = self.server.order.views[_id]
         self.date_rg = RadioGroup(date_frame, data.keys(), command=lambda: show_ticket(self))
@@ -132,27 +131,29 @@ class App(tk.Tk):
         for widget in self.main_frame.winfo_children():
             widget.destroy()
 
-    def create_task(self, entry, id_entry):
-        num_ent = getattr(self, 'num_ent').get()
-        if not is_integer(num_ent):
-            messagebox.showerror(message='购票数量有误')
-            return
-
-        task_time = entry.get()
+    def create_task(self, task_ent, id_entry):
+        id_ = id_entry.get()
+        task_time = task_ent.get()
         try:
             run_date = datetime.strptime(task_time, "%Y%m%d%H%M")
         except ValueError:
             messagebox.showerror(message='时间校验出错，格式如：202306011358')
+            return
+        trigger = DateTrigger(run_date=run_date, timezone='Asia/Shanghai')
+        self.scheduler.add_job(self.server.task.run_tasks, trigger=trigger, args=(id_,))
+        self.log_text.insert(tk.END, f'已添加任务：{run_date}/{id_}\n')
+
+    def add_ticket_list(self, id_entry):
+        num_ent = getattr(self, 'num_ent').get()
+        if not is_integer(num_ent):
+            messagebox.showerror(message='购票数量有误')
             return
         id_ = id_entry.get()
         date = self.date_rg.var.get()
         ticket = getattr(self, 'ticket_rg').var.get()
         pn = ticket.split('/')[0]
         self.server.add_task(id_, date, pn, int(num_ent))
-        trigger = DateTrigger(run_date=run_date, timezone='Asia/Shanghai')
-        self.scheduler.add_job(self.server.task.run_tasks, trigger=trigger, args=(id_,),
-                               name=f'{id_}_{date}_{pn}')
-        self.log_text.insert(tk.END, f'已添加任务：{run_date}/{id_}/{date}/{pn}\n')
+        self.log_text.insert(tk.END, f'已添加至待抢：{id_}/{date}/{pn}/{num_ent}\n')
 
     def show_tasks(self):
         self.destroy()
@@ -206,11 +207,18 @@ def is_integer(param):
     except (ValueError, TypeError):
         return False
 
-def on_closing():
-    if messagebox.askokcancel("Quit", "Do you want to quit?"):
-        app.destroy()
 
 if __name__ == '__main__':
-    app = App()
-    # app.protocol("WM_DELETE_WINDOW", on_closing)
-    app.mainloop()
+    def run():
+        import os
+        import signal
+
+        def kill():
+            os.kill(os.getpid(), signal.SIGTERM)
+
+        app = App()
+        app.protocol("WM_DELETE_WINDOW", kill)
+        app.mainloop()
+
+
+    run()

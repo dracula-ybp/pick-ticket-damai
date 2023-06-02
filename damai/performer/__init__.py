@@ -17,10 +17,7 @@ class Performance:
 
     async def init_browser(self, **config):
         """初始化配置"""
-        connect_params = {
-            'browserWSEndpoint': get_web_socket_debugger_url(),
-        }
-        self.browser = await connect(connect_params, **config)
+        self.browser = await connect(browserWSEndpoint=get_web_socket_debugger_url(), **config)
 
     @property
     async def page(self) -> Page:
@@ -30,18 +27,20 @@ class Performance:
 
     async def place_order(self, url, page, ticket_num: int = 1):
         """选取实名观影人，提交订单"""
-        print(url)
+        print('place_order')
         page: Page = await page() if callable(page) else await page
+        print(page)
         nums = 60 * 20
         start = time.time()
         while True:
+            print(333)
             await asyncio.wait([page.goto(url), page.waitForNavigation()])
+
             try:
                 await page.waitForSelector('i.iconfont', timeout=3000)
             except TimeoutError:
-                print(f"<title>{await page.title()}</title>")
+                print(f"1 <title>{await page.title()}</title>")
                 continue
-
             items = await page.querySelectorAll('i.iconfont')
             for num in range(0, ticket_num):
                 await items[num].click()
@@ -49,12 +48,42 @@ class Performance:
             await page.waitFor(500)
             items = await page.querySelectorAll('#dmOrderSubmitBlock_DmOrderSubmitBlock div[view-name=TextView]')
             await items[-1].click()
-
+            print(555)
             # await page.waitForNavigation()
-            print(f"<title>{await page.title()}</title>")
+            print(f"2 <title>{await page.title()}</title>")
             if await page.title() == "payment" or time.time() - start > nums:
                 break
-            await page.waitFor(3000)
+        await page.close()
+
+    async def place_order1(self, url, page, ticket_num: int = 1):
+        """选取实名观影人，提交订单"""
+        print('place_order1')
+        page: Page = await page() if callable(page) else await page
+        print(page)
+        nums = 60 * 20
+        start = time.time()
+        while True:
+            print(222)
+            await asyncio.wait([page.goto(url), page.waitForNavigation()])
+            try:
+                await page.waitForSelector('i.iconfont', timeout=3000)
+            except TimeoutError:
+                print(f"1 <title>{await page.title()}</title>")
+                continue
+            items = await page.querySelectorAll('i.iconfont')
+            for num in range(0, ticket_num):
+                await items[num].click()
+
+            await page.waitFor(500)
+            items = await page.querySelectorAll('#dmOrderSubmitBlock_DmOrderSubmitBlock div[view-name=TextView]')
+
+            await items[-1].click()
+            print(4444)
+
+            # await page.waitForNavigation()
+            print(f"2 <title>{await page.title()}</title>")
+            if await page.title() == "payment" or time.time() - start > nums:
+                break
         await page.close()
 
     @property
@@ -73,3 +102,32 @@ def get_web_socket_debugger_url():
         raise SystemExit('检查是否已经配置或开启调式谷歌浏览器')
     else:
         return response.json()["webSocketDebuggerUrl"]
+
+
+if __name__ == '__main__':
+
+    async def main():
+        url = 'https://m.damai.cn/app/dmfe/h5-ultron-buy/index.html?exParams=%7B%22damai%22%3A%221%22%2C%22channel%22' \
+              '%3A%22damai_app%22%2C%22umpChannel%22%3A%2210002%22%2C%22atomSplit%22%3A%221%22%2C%22serviceVersion%22' \
+              '%3A%221.8.5%22%2C%22umidToken%22%3A%22T2gAHw1r7GAtavV8IfjbKjRrT1rvfLMQ48dzsVbvL5DaslK-_6k4LN' \
+              '-rSYGh0CSCSnQ%3D%22%2C%22ua%22%3A%22140%23/gToG6jwzzPW0Qo23zaF4pN8s77oMNzqYasU/fwSuYnIM0j%2ByKXl' \
+              '%2BxzVamhb/QGm0VQ4q3hqzznsQqOTm81zzjVw9jWqlbrz2DD3V3gqzPMi228%2BtCfxzDrb3z//EHmijDapVrMn79/QCGKQA44d' \
+              '/Q72lQpGncnlAH7CFZW0NXrrU%2BPf3rxaT9V7hPScGL' \
+              '/mXpZ2TNzCIiZGmqCJ6K1js3sKL7hjEtzuFJ3efCvfvQfujhx9AqKwuzlbXMDnKxyKLzz%2BbQiXrJTsTSUuZ3vc%2B74mCg2QC' \
+              '%2BzDfEnuvRCx4fyHXxp4/SFBZYKzzN/CftLj' \
+              '/6nQuum1CrbmvXdCl1mpcNb5T4X6co5mvjtc2DiTxsRtYzvV1iXZJLCSYepRGXvREkcRjxxUYjmQxvp8' \
+              '%2BdCWovPkyuBBecwiWA2kpemwVC1Jx%2BXRijpgmLhhfp2y9fdIgqWfNBAvGWUjtdx/QfdfmHsxRmQMcsGug' \
+              '/%2ByP8KPO4iDLO2WrdSbxNC8oan9EiiKElmIAG3kMa0tNAe97EN8lRVMJfbxw3yAbioeYstliCL1HiPoY/gZlq4znnf7Otqka9e' \
+              '%2BRuD2%2BjhdYw7h3avO8cj2nkaSkWMAYlVevysOLdezDQDTFOaEz485eFr%2B0lsydSRDJjKYvVSUQvREJM4thg' \
+              '%2BgK08yUTyM3PjdG1Lz2LKYuckpR96BtncMN4kUxmJ2DSwASy4%2BVgWOSMLxJc3Cwgd7VR5PuTqgDNZ116bb0FRFto1' \
+              '%2BMdnyVCbk5P4p23TpG5AK3mpEhsuWGfNPkV/o7VbL%2B6jSFfm7vhqAeIHJNNKvjYM/6sIDYVL8wK' \
+              '/69fKcoMeZXT6ExOy3V87d64XT/jcISDT//F08V3vMTlC3jwc91EHy5R2ugb/X8wZ' \
+              '/a3tQTTquQvhLG7OKmw2RKU35nWdCaEJEt3FPgkrOHRPb14bi9F%3D%3D%22%7D&buyParam=721216860314_1_5023638889416' \
+              '&buyNow=true&privilegeActId= '
+        p = Performance()
+        await asyncio.create_task(p.init_browser())
+        s = [p.place_order(url, p.browser.newPage, 1), p.place_order1(url, p.browser.newPage, 2)]
+
+        await asyncio.wait(s)
+
+    asyncio.run(main())

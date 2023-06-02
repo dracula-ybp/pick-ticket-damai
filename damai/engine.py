@@ -26,6 +26,7 @@ class ExecutionEngine:
         for sku in sku_list:
             if price == sku["priceName"]:
                 url = self.order.make_order_url(sku["itemId"], sku["skuId"], ticket_num)
+                print(url)
                 self.task.bind_task(name, (self.perform.place_order,
                                            (url, self.perform.browser.newPage, ticket_num)))
 
@@ -34,12 +35,12 @@ class ExecutionEngine:
 
 
 if __name__ == '__main__':
+    loop = asyncio.get_event_loop()
     engine = ExecutionEngine()
-    engine.perform.init_browser()
+    loop.run_until_complete(engine.perform.init_browser())
     engine.order.add(718335834447)
     print(engine.order.views)
     engine.add_task(718335834447, '2023-07-28', '看台517元', 1)
     engine.add_task(718335834447, '2023-07-28', '看台317元', 1)
     print(engine.task.tasks)
-    asyncio.get_event_loop().run_until_complete(engine.run_task(718335834447))
-    print(engine.task.tasks)
+    loop.create_task(engine.run_task(718335834447))
