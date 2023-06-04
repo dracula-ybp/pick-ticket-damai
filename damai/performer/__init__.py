@@ -27,13 +27,10 @@ class Performance:
 
     async def place_order(self, url, page, ticket_num: int = 1):
         """选取实名观影人，提交订单"""
-        print('place_order')
         page: Page = await page() if callable(page) else await page
-        print(page)
         nums = 60 * 20
         start = time.time()
         while True:
-            print(333)
             await asyncio.wait([page.goto(url), page.waitForNavigation()])
 
             try:
@@ -47,44 +44,67 @@ class Performance:
 
             await page.waitFor(500)
             items = await page.querySelectorAll('#dmOrderSubmitBlock_DmOrderSubmitBlock div[view-name=TextView]')
-            await items[-1].click()
-            print(555)
+            while True:
+                try:
+                    await items[-1].click()
+                except Exception:
+                    break
             # await page.waitForNavigation()
             print(f"2 <title>{await page.title()}</title>")
-            if await page.title() == "payment" or time.time() - start > nums:
+            if await page.title() in {"payment", "支付宝付款"} or time.time() - start > nums:
                 break
         await page.close()
 
     async def place_order1(self, url, page, ticket_num: int = 1):
         """选取实名观影人，提交订单"""
-        print('place_order1')
         page: Page = await page() if callable(page) else await page
-        print(page)
-        nums = 60 * 20
-        start = time.time()
+        # 第一个while True点击太快会触发网络拥堵，可以手动刷新，确保任务不被结束。
         while True:
-            print(222)
             await asyncio.wait([page.goto(url), page.waitForNavigation()])
             try:
                 await page.waitForSelector('i.iconfont', timeout=3000)
             except TimeoutError:
-                print(f"1 <title>{await page.title()}</title>")
+                title = await page.title()
+                # 本次抢票未登录，重新登录抢票没啥戏了，直接结束
+                if title == "登录":
+                    return
                 continue
+
+            # 选择观影人
             items = await page.querySelectorAll('i.iconfont')
             for num in range(0, ticket_num):
                 await items[num].click()
-
             await page.waitFor(500)
+
             items = await page.querySelectorAll('#dmOrderSubmitBlock_DmOrderSubmitBlock div[view-name=TextView]')
 
-            await items[-1].click()
-            print(4444)
+            while True:
+                try:
+                    # 提交订单
+                    await items[-1].click()
+                    await page.waitFor(500)
+                except Exception:
+                    break
 
-            # await page.waitForNavigation()
-            print(f"2 <title>{await page.title()}</title>")
-            if await page.title() == "payment" or time.time() - start > nums:
-                break
-        await page.close()
+                # 抢票成功
+                if await page.title() in {"payment", "支付宝付款"}:
+                    await page.goto('https://orders.damai.cn/orderList')
+                    return
+
+                # 此处可能会出现库存不足，有订单未支付等。目前先这样设计，可能有回流票。
+                confirm_content = await page.querySelectorAll('#confirmContent')
+                if confirm_content:
+                    text = await (await confirm_content[0].getProperty('textContent')).jsonValue()
+                    # 抢票成功，有未支付订单提示
+                    if "未支付订单" in text:
+                        await page.goto('https://orders.damai.cn/orderList')
+                        return
+                    cancel = await page.xpath('//div[@id="confirmContent"]/../following-sibling::div/div[1]')
+                    await cancel[0].click()
+
+                # 网络拥堵，网络重试div
+                if await page.querySelectorAll('.bannar'):
+                    break
 
     @property
     def window_size(self):
@@ -126,7 +146,7 @@ if __name__ == '__main__':
               '&buyNow=true&privilegeActId= '
         p = Performance()
         await asyncio.create_task(p.init_browser())
-        s = [p.place_order(url, p.browser.newPage, 1), p.place_order1(url, p.browser.newPage, 2)]
+        s = [p.place_order1(url, p.browser.newPage, 2)]
 
         await asyncio.wait(s)
 

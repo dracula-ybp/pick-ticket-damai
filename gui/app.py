@@ -1,15 +1,17 @@
 import asyncio
-import sys
+import json
 import threading
 import tkinter as tk
 from datetime import datetime
-from tkinter import ttk
+from tkinter import ttk, simpledialog
 from tkinter import messagebox
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.date import DateTrigger
 
 from damai.engine import ExecutionEngine
+from gui.utils import check_config, config_path, command_chrome
+from config import PROMPT
 
 
 class App(tk.Tk):
@@ -24,12 +26,19 @@ class App(tk.Tk):
         self.main_frame = tk.Frame(self, bg="#f9f9f9")
         self.navigation()
         self.main_frame.pack(side='right', fill='both', expand=True)
-        ttk.Label(self.main_frame, text='Hello Word', font=('Arial', 30)).pack()
+
+        entry = tk.Entry(self.main_frame, width=45)
+        entry.insert(0, '浏览器下载地址：https://www.google.cn/intl/zh-CN/chrome/')
+        entry.configure(state="readonly")
+        entry.pack(side="top", pady=30)
+        ttk.Button(self.main_frame, text="启动/配置谷歌浏览器", command=self.allocation_browser,
+                   style='RoundedButton.TButton').pack(side="top", pady=30, expand=True)
 
     def navigation(self):
         """侧边导航栏"""
         table = dict(
-            抢票须知=self.need_to_know, 选票=self.choose_ticket, 任务视图=self.show_tasks
+            抢票须知=self.need_to_know, 选票=self.choose_ticket, 任务视图=self.show_tasks,
+            启动谷歌浏览器=self.allocation_browser
         )
         sidebar = tk.Frame(self, bg='#f4f4f4', width=100, height=self.winfo_screenheight())
         style = ttk.Style()
@@ -45,15 +54,27 @@ class App(tk.Tk):
             button(v, k)
         sidebar.pack(side='left', fill='y')
 
+    def allocation_browser(self):
+        check_config()
+        with open(config_path, 'r', encoding='utf-8') as f:
+            data = json.loads(f.read())
+        chrome_exe_path = data.get("chrome_exe_path")
+        if not chrome_exe_path:
+            chrome_exe_path = simpledialog.askstring("Input", prompt='输入本机chrome.exe路径',
+                                                     parent=self.main_frame, )
+            data['chrome_exe_path'] = chrome_exe_path
+            with open(config_path, 'w') as f:
+                json.dump(data, f)
+        try:
+            command_chrome(chrome_exe_path)
+            messagebox.showinfo(message="Chrome已经打开，记得登陆帐号！")
+        except FileNotFoundError:
+            messagebox.showerror(message="Chrome无效，可再次输入！")
+
     def need_to_know(self):
         """显示抢票须知"""
         self.destroy()
-        text = """
-        1.21321の2rwefsdggwgaweawfeefsef对方违法
-        2.dwqdqdq啊哇打网球
-        3.文法问法二v啊vVERb
-        """
-        lbl = ttk.Label(self.main_frame, text=text, font=('楷体', 19))
+        lbl = ttk.Label(self.main_frame, text=PROMPT, font=('方正姚体', 15))
         lbl.pack(fill='both', expand=True)
 
     def choose_ticket(self):
@@ -91,7 +112,8 @@ class App(tk.Tk):
         self.menu.pack(padx=20, pady=20, expand=True, fill='both')
 
         date_frame = tk.Frame(self.menu, bg="#f9f9f9")
-        tk.Label(date_frame, text="场次", font=('楷体', 13), bg='#f4f4f4', foreground="#ff4867", width=7, height=1).pack(
+        tk.Label(date_frame, text="场次", font=('楷体', 13), bg='#f4f4f4', foreground="#ff4867", width=7,
+                 height=1).pack(
             side="left", padx=10, pady=10)
 
         def show_ticket(obj):
@@ -157,7 +179,6 @@ class App(tk.Tk):
 
     def show_tasks(self):
         self.destroy()
-        print(self.scheduler.get_jobs())
         lbl = ttk.Label(self.main_frame, text=self.scheduler.get_jobs(), font=('楷体', 10))
         lbl.pack(fill='both', expand=True)
 
@@ -208,17 +229,17 @@ def is_integer(param):
         return False
 
 
+def run():
+    import os
+    import signal
+
+    def kill():
+        os.kill(os.getpid(), signal.SIGTERM)
+
+    app = App()
+    app.protocol("WM_DELETE_WINDOW", kill)
+    app.mainloop()
+
+
 if __name__ == '__main__':
-    def run():
-        import os
-        import signal
-
-        def kill():
-            os.kill(os.getpid(), signal.SIGTERM)
-
-        app = App()
-        app.protocol("WM_DELETE_WINDOW", kill)
-        app.mainloop()
-
-
     run()
