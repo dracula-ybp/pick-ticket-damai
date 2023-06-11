@@ -80,6 +80,7 @@ class OrderView:
             date, info = self.get_sku_info(id_, calendar)
             views[date] = info
             time.sleep(0.5)
+        print(self.views)
         self._views[alias or id_] = views
 
     @staticmethod

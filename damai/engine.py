@@ -27,7 +27,7 @@ class ExecutionEngine:
             if price == sku["priceName"]:
                 url = self.order.make_order_url(sku["itemId"], sku["skuId"], ticket_num)
                 print(url)
-                self.task.bind_task(name, (self.perform.place_order,
+                self.task.bind_task(name, (self.perform.place_order1,
                                            (url, self.perform.browser.newPage, ticket_num)))
 
     async def run_task(self, name):
