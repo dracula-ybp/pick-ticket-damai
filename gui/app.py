@@ -1,3 +1,5 @@
+"""不会写界面，东拼西凑的界面"""
+
 import asyncio
 import json
 import threading

@@ -21,7 +21,6 @@ async def main():
           '/69fKcoMeZXT6ExOy3V87d64XT/jcISDT//F08V3vMTlC3jwc91EHy5R2ugb/X8wZ' \
           '/a3tQTTquQvhLG7OKmw2RKU35nWdCaEJEt3FPgkrOHRPb14bi9F%3D%3D%22%7D&buyParam=714956979854_1_5199272746116' \
           '&buyNow=true&privilegeActId='
-    # url = 'https://m.damai.cn/app/dmfe/h5-ultron-buy/index.html?buyParam=714956979854_1_5199272746116&buyNow=true&exParams=%257B%2522channel%2522%253A%2522damai_app%2522%252C%2522damai%2522%253A%25221%2522%252C%2522umpChannel%2522%253A%2522100031004%2522%252C%2522subChannel%2522%253A%2522damai%2540damaih5_h5%2522%252C%2522atomSplit%2522%253A1%257D&spm=a2o71.project.0.bottom&sqm=dianying.h5.unknown.value'
     instant = Performance()
     await asyncio.create_task(instant.init_browser())
     tasks = [instant.submit(url, instant.browser.newPage, 1)]
