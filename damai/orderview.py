@@ -32,9 +32,6 @@ class OrderView:
         self.url = ("https://detail.damai.cn/subpage?itemId={}&dataId={}&"
                     "dataType=2&apiVersion=2.0&dmChannel=pc@damai_pc&bizCode=ali.china.damai"
                     "&scenario=itemsku&privilegeActId=")
-        # self.url = ("https://detail.damai.cn/subpage?itemId={}&apiVersion=2.0"
-        #             "&dmChannel=pc@damai_pc&bizCode=ali.china.damai&scenario=itemsku"
-        #             "&dataType=&dataId={}&privilegeActId=&callback=__jp2")
         self.headers = {
             "accept-encoding": "gzip, deflate, br",
             "accept-language": "zh,en-US;q=0.9,en;q=0.8,zh-CN;q=0.7",
@@ -80,7 +77,6 @@ class OrderView:
             date, info = self.get_sku_info(id_, calendar)
             views[date] = info
             time.sleep(0.5)
-        print(self.views)
         self._views[alias or id_] = views
 
     @staticmethod

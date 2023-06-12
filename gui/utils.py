@@ -24,3 +24,9 @@ def check_config():
         with open(config_path, 'w') as f:
             json.dump({'chrome_exe_path': ''}, f)
 
+
+# path = r'D:\da\example1'
+# chrome_exe_path ="C:\\Users\\lkt\\AppData\\Local\\Google\\Chrome\\Application\\chrome.exe"
+# cmd = [chrome_exe_path, '--remote-debugging-port=9223', f'--user-data-dir={path}']
+# subprocess.Popen(cmd)
+
