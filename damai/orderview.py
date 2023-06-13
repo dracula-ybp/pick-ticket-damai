@@ -5,10 +5,12 @@ from urllib import parse
 
 import requests
 
+
 PREFIX = {
     "damai": "1", "channel": "damai_app", "umpChannel": "10002",
     "atomSplit": "1", "serviceVersion": "1.8.5"
 }
+# 不加也行
 UMIDTOKEN = "T2gAHw1r7GAtavV8IfjbKjRrT1rvfLMQ48dzsVbvL5DaslK-_6k4LN-rSYGh0CSCSnQ="
 UA = ("140#/gToG6jwzzPW0Qo23zaF4pN8s77oMNzqYasU/fwSuYnIM0j+yKXl+xzVamhb/QGm0VQ4q3hq"
       "zznsQqOTm81zzjVw9jWqlbrz2DD3V3gqzPMi228+tCfxzDrb3z//EHmijDapVrMn79/QCGKQA44d/"

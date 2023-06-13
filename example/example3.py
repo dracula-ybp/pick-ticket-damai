@@ -2,6 +2,8 @@ import asyncio
 
 from damai.performer import Performance
 
+"""已知订单url"""
+
 
 async def main():
     url = 'https://m.damai.cn/app/dmfe/h5-ultron-buy/index.html?exParams=%7B%22damai%22%3A%221%22%2C%22channel%22' \
@@ -19,7 +21,7 @@ async def main():
           '%2BgK08yUTyM3PjdG1Lz2LKYuckpR96BtncMN4kUxmJ2DSwASy4%2BVgWOSMLxJc3Cwgd7VR5PuTqgDNZ116bb0FRFto1' \
           '%2BMdnyVCbk5P4p23TpG5AK3mpEhsuWGfNPkV/o7VbL%2B6jSFfm7vhqAeIHJNNKvjYM/6sIDYVL8wK' \
           '/69fKcoMeZXT6ExOy3V87d64XT/jcISDT//F08V3vMTlC3jwc91EHy5R2ugb/X8wZ' \
-          '/a3tQTTquQvhLG7OKmw2RKU35nWdCaEJEt3FPgkrOHRPb14bi9F%3D%3D%22%7D&buyParam=714956979854_1_5199272746116' \
+          '/a3tQTTquQvhLG7OKmw2RKU35nWdCaEJEt3FPgkrOHRPb14bi9F%3D%3D%22%7D&buyParam=720545258599_1_5016701340284' \
           '&buyNow=true&privilegeActId='
     instant = Performance()
     await asyncio.create_task(instant.init_browser())

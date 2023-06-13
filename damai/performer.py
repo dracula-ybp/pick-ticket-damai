@@ -1,4 +1,5 @@
 import asyncio
+import sys
 from typing import Optional
 
 import requests
@@ -37,7 +38,7 @@ class Performance:
         pages = await self.browser.pages()
         return pages[0]
 
-    async def submit(self, url, page, ticket_num: int = 1):
+    async def submit(self, url: str, page, ticket_num: int = 1):
         page: Page = await page() if callable(page) else await page
         while True:
             logger.info('刷新一下')
@@ -53,9 +54,6 @@ class Performance:
                 break
             except Exception as e:
                 logger.error(e)
-            else:
-                logger.info('submit 抢票成功，进入手机App订单管理付款')
-                break
 
     async def select_real_name(self, page, ticket_num: int = 1):
         """选择实名制观演人，根据ticket_num勾选人数，默认勾选第一个。
@@ -83,20 +81,19 @@ class Performance:
         while True:
             # 2：提交两次订单，实测点击多了并没用，基本连续点击三次出现"网络拥堵"提示
             for _ in range(2):
-                logger.info('提交订单')
                 await button.click()
-                await page.waitFor(500)
+                logger.info('提交订单')
                 # 存在bug,买票提交且成功还在加载但是下一个异步任务已经开始，
-                # 导致await page.title取到的还是提交页面的title
-                # page.waitFor还是设置为500吧，能提交成功一次就够了
+                # 导致page.title取到的还是提交页面的title，设置为450吧。
+                # 不设置也行，但是程序不会按时结束，但是可以加速抢票流程
+                await page.waitFor(450)
                 if await page.title() in {"payment", "支付宝付款"}:
                     logger.info('polling 抢票成功，进入手机App订单管理付款')
-                    return
+                    sys.exit()
                 await self.confirm_content_tip(page)
 
             if await self.is_refresh(page):
                 raise CongestionError("网络拥堵")
-            continue
 
     async def confirm_content_tip(self, page):
         """处理点击提交订单后弹出的提示
@@ -110,7 +107,7 @@ class Performance:
             # 如有未支付订单提示
             if "未支付订单" in text:
                 logger.info('confirm_content_tip 抢票成功，进入手机App订单管理付款')
-                return
+                sys.exit()
             cancel = await page.xpath('//div[@id="confirmContent"]/../following-sibling::div/div[1]')
             await cancel[0].click()
 
@@ -122,8 +119,6 @@ class Performance:
             text = await (await warn_element.getProperty('textContent')).jsonValue()
             text = text.replace("\n", "")
             logger.info(text)
-            # close_element = await page.querySelector('div.baxia-dialog-close')
-            # await close_element.click()
             return "网络" in text
 
 

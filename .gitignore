@@ -4,5 +4,5 @@ build/
 project.egg-info/
 setup.py
 dist/
-ob.spec
+.spec
 

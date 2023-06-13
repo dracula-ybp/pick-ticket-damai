@@ -3,6 +3,7 @@ import asyncio
 from damai.orderview import OrderView
 from damai.performer import Performance
 
+"""两个id都会复制，定时任务意外结束，就使用这个"""
 
 ITEM_ID = 714956979854
 SUK_ID = 5199272746119
