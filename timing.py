@@ -7,9 +7,9 @@ from damai.orderview import OrderView
 from damai.performer import Performance
 
 # 薛之谦合肥 714956979854, 5199272746119, 1
-
-ARGS = (720288564028, 5189134934172, 1)
-TRIGGER = dict(hour=19, minute=26, second=59)
+# 720336645935, 5033748485634, 1
+ARGS = (721234813852, 5190876482301, 1)
+TRIGGER = dict(hour=10, minute=59, second=59)
 
 
 def main():

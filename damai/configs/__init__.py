@@ -1,3 +1,5 @@
+"""配置模块，优先级：与项目同级的config.yaml > 用户根目录config.yaml > default_configs"""
+
 import os
 import yaml
 from typing import Optional
@@ -6,6 +8,13 @@ from damai.configs import default_configs
 
 
 class Configs:
+
+    """
+    全局配置
+
+    项目同级的config.yaml, 用户根目录config.yaml，只会使用其中一个配置项，
+    会覆盖default_configs.py中相同配置。
+    """
 
     FILE = "config.yaml"
 
@@ -18,7 +27,7 @@ class Configs:
     def __getitem__(self, opt_name):
         if opt_name not in self:
             return None
-        return self.config[opt_name].value
+        return self.config[opt_name]
 
     def __contains__(self, name):
         return name in self.config
@@ -36,9 +45,10 @@ class Configs:
             self._load_yaml(existing_path)
 
     def _load_yaml(self, file):
-        with open(file) as fp:
+        with open(file, encoding='utf-8') as fp:
             config = yaml.safe_load(fp)
-            self.config.update(config)
+            if config:
+                self.config.update(config)
 
     def get(self, key, default=None):
         return self.config.get(key, default)

@@ -1,5 +1,7 @@
 from typing import Union, Optional
 
+from loguru import logger
+
 from damai.performer import Performance
 from damai.orderview import OrderView
 from damai.tasks import TaskManager
@@ -29,6 +31,7 @@ class ExecutionEngine:
                     name,
                     (self.perform.submit, (url, self.perform.browser.newPage, ticket_num))
                 )
+                logger.info(url)
 
     async def run_task(self, name):
         await self.task.run_tasks(name)

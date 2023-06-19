@@ -5,9 +5,10 @@ from damai.performer import Performance
 
 """两个id都会复制，定时任务意外结束，就使用这个"""
 
-ITEM_ID = 714956979854
-SUK_ID = 5199272746119
+ITEM_ID = 721234813852
+SUK_ID = 5190876482301
 TICKET_NUM = 1
+# 720336645935, 5033748485634
 
 
 async def run():
