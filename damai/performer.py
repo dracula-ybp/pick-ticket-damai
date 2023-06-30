@@ -1,4 +1,8 @@
 import asyncio
+import re
+
+import aiohttp
+import json
 import sys
 import time
 from typing import Optional
@@ -10,6 +14,7 @@ from pyppeteer.errors import TimeoutError
 from loguru import logger
 
 from damai.errors import LoginError, NotElementError, CongestionError
+from damai.utils import get_sign, timestamp
 
 
 class Performance:
@@ -136,3 +141,72 @@ class Performance:
             text = text.replace("\n", "")
             logger.info(text)
             return "网络" in text
+
+
+class ApiFetch:
+
+    # "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Safari/537.36 MicroMessenger/7.0.20.1781(0x6700143B) NetType/WIFI MiniProgramEnv/Windows WindowsWechat/WMPF XWEB/8237"
+
+    DEFAULT_CONFIG = dict(
+        CHANNEL="damai@damaih5_h5", APP_KEY=12574478, COOKIE=None,
+        USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                   " (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
+    )
+
+    @property
+    def headers(self):
+        return {
+            "content-type": "application/x-www-form-urlencoded",
+            "cookie": self.DEFAULT_CONFIG["COOKIE"],
+            "globalcode": "ali.china.damai",
+            "origin": "https://m.damai.cn",
+            "pragma": "no-cache",
+            "referer": "https://m.damai.cn/",
+            "User-Agent": self.DEFAULT_CONFIG["USER_AGENT"]
+
+        }
+
+    async def open(self):
+        self.session = aiohttp.ClientSession(headers=self.headers)
+
+    async def close(self):
+        await self.session.close()
+
+    def update_default_config(self, configs=None):
+        if configs:
+            for key in self.DEFAULT_CONFIG.keys():
+                if key in configs:
+                    self.DEFAULT_CONFIG[key] = configs[key]
+
+    @property
+    def token(self):
+        return re.search(r'_m_h5_tk=(.*?)_', self.DEFAULT_CONFIG["COOKIE"]).group(1)
+
+    async def build_order(self, buy_parma, ua, umidtoken):
+        print(self.headers)
+        ep = {
+            "channel": "damai_app", "damai": "1", "umpChannel": "100031004",
+            "subChannel": self.DEFAULT_CONFIG["CHANNEL"], "atomSplit": '1',
+            "serviceVersion": "2.0.0", "customerType": "default"
+        }
+        params = {"buyNow": True, "exParams": json.dumps(ep, separators=(",", ":")),
+                  "buyParam": buy_parma, "dmChannel": self.DEFAULT_CONFIG["CHANNEL"]}
+        params = json.dumps(params, separators=(",", ":"))
+        t = timestamp()
+        sign = get_sign(self.token, t, self.DEFAULT_CONFIG["APP_KEY"], params)
+        url = f'https://mtop.damai.cn/h5/mtop.trade.order.build.h5/4.0/?jsv=2.7.2&appKey=12574478&t={t}&sign={sign}&type=originaljson&dataType=json&v=4.0&H5Request=true&AntiCreep=true&AntiFlood=true&api=mtop.trade.order.build.h5&method=POST&ttid=%23t%23ip%23%23_h5_2014&globalCode=ali.china.damai&tb_eagleeyex_scm_project=20190509-aone2-join-test'
+        data = {'data': params, 'bx-ua': ua, 'bx-umidtoken': umidtoken}
+        response = await self.session.post(url, data=data)
+        return await response.json()
+
+    async def create_order(self, params, ua, umidtoken):
+        t = timestamp()
+        sign = get_sign(self.token, t, self.DEFAULT_CONFIG["APP_KEY"], params)
+        url = f'https://mtop.damai.cn/h5/mtop.trade.order.create.h5/4.0/?jsv=2.7.2&appKey=12574478&t={t}&sign={sign}&v=4' \
+              f'.0&post=1&type=originaljson&timeout=15000&dataType=json&isSec=1&ecode=1&AntiCreep=true&ttid=%23t%23ip%23' \
+              f'%23_h5_2014&globalCode=ali.china.damai&tb_eagleeyex_scm_project=20190509-aone2-join-test&H5Request=true' \
+              f'&api=mtop.trade.order.create.h5'
+        data = {'data': params, 'bx-ua': ua, 'bx-umidtoken': umidtoken}
+        response = await self.session.post(url, data=data)
+        return await response.json()
+
