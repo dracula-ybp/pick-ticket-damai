@@ -149,8 +149,7 @@ class ApiFetch:
 
     DEFAULT_CONFIG = dict(
         CHANNEL="damai@damaih5_h5", APP_KEY=12574478, COOKIE=None,
-        USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-                   " (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
+        USER_AGENT="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Safari/537.36"
     )
 
     @property
@@ -167,7 +166,8 @@ class ApiFetch:
         }
 
     async def open(self):
-        self.session = aiohttp.ClientSession(headers=self.headers)
+        from aiohttp import TCPConnector
+        self.session = aiohttp.ClientSession(headers=self.headers, connector=TCPConnector(ssl=False))
 
     async def close(self):
         await self.session.close()
@@ -200,6 +200,7 @@ class ApiFetch:
         return await response.json()
 
     async def create_order(self, params, ua, umidtoken):
+        print(umidtoken)
         t = timestamp()
         sign = get_sign(self.token, t, self.DEFAULT_CONFIG["APP_KEY"], params)
         url = f'https://mtop.damai.cn/h5/mtop.trade.order.create.h5/4.0/?jsv=2.7.2&appKey=12574478&t={t}&sign={sign}&v=4' \
@@ -208,5 +209,7 @@ class ApiFetch:
               f'&api=mtop.trade.order.create.h5'
         data = {'data': params, 'bx-ua': ua, 'bx-umidtoken': umidtoken}
         response = await self.session.post(url, data=data)
+        print(params)
+        print(response.request_info)
         return await response.json()
 
