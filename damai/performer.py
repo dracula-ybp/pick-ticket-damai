@@ -7,29 +7,20 @@ import sys
 import time
 from typing import Optional
 
+from aiohttp import TCPConnector
 from pyppeteer.browser import Browser
 from pyppeteer.launcher import connect
 from pyppeteer.page import Page
-from pyppeteer.errors import TimeoutError
+from pyppeteer.errors import TimeoutError, ElementHandleError
 from loguru import logger
 
 from damai.errors import LoginError, NotElementError, CongestionError
-from damai.utils import get_sign, timestamp
+from damai.utils import get_sign, timestamp, make_ticket_params
 
 
 class Performance:
-    """演唱会捡票
 
-    在开票后一直点击提交订单，会出现“请勿重复提交订单”，然后出现“网络拥堵“提示。
-    几次开票测试中，出现“网络拥堵”，关闭后点击提交立马又出现，出现后几秒内刷新都没用。
-    在捡漏成功时，感觉每次都没出现“请勿重复提交订单”，可能疯狂发送请求过去其实没啥用。
-    出现网络拥堵，立即刷新页面，再次提交订单，反正直接捡漏成功。
-
-    推荐把浏览器缩放50%，后面发现页面被修改了，不缩放可能造成无法勾选实名观演人
-    """
-
-    DEFAULT_CONFIG = dict(PORT=9222, CRITICAL_WAIT=450, WARN_WAIT=100,
-                          SUBMIT_FREQUENCY=2, SHUTDOWN=60 * 10)
+    DEFAULT_CONFIG = dict(PORT=9222)
 
     def __init__(self):
         self.browser: Optional[Browser] = None
@@ -41,16 +32,38 @@ class Performance:
                     self.DEFAULT_CONFIG[key] = configs[key]
 
     async def init_browser(self, **config):
-        """初始化配置"""
         self.browser = await connect(
             browserURL=f"http://127.0.0.1:{self.DEFAULT_CONFIG['PORT']}", **config
         )
 
     @property
     async def page(self) -> Page:
-        """默认标签页，新标签使用browser.newPage"""
         pages = await self.browser.pages()
         return pages[0]
+
+    def submit(self, *args, **kwargs):
+        raise NotImplementedError()
+
+
+class WebDriverPerformance:
+
+    """模拟浏览器购票
+
+    在开票后一直点击提交订单，会出现“请勿重复提交订单”，然后出现“网络拥堵“提示。
+    几次开票测试中，出现“网络拥堵”，关闭后点击提交立马又出现，出现后几秒内刷新都没用。
+    在捡漏成功时，感觉每次都没出现“请勿重复提交订单”，可能疯狂发送请求过去其实没啥用。
+    出现网络拥堵，立即刷新页面，再次提交订单，反正直接捡漏成功。
+
+    推荐把浏览器缩放50%，后面发现页面被修改了，不缩放可能造成无法勾选实名观演人
+    """
+
+    DEFAULT_CONFIG = dict(
+        CRITICAL_WAIT=450, WARN_WAIT=100, SUBMIT_FREQUENCY=2,
+        SHUTDOWN=60 * 10
+    )
+
+    def __init__(self):
+        self.browser: Optional[Browser] = None
 
     async def submit(self, url: str, page, ticket_num: int = 1):
         start = time.time()
@@ -143,13 +156,13 @@ class Performance:
             return "网络" in text
 
 
-class ApiFetch:
-
-    # "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Safari/537.36 MicroMessenger/7.0.20.1781(0x6700143B) NetType/WIFI MiniProgramEnv/Windows WindowsWechat/WMPF XWEB/8237"
+class ApiFetchPerformance(Performance):
 
     DEFAULT_CONFIG = dict(
+        **Performance.DEFAULT_CONFIG,
         CHANNEL="damai@damaih5_h5", APP_KEY=12574478, COOKIE=None,
-        USER_AGENT="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Safari/537.36"
+        USER_AGENT="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko)"
+                   " Chrome/112.0.0.0 Safari/537.36"
     )
 
     @property
@@ -159,57 +172,94 @@ class ApiFetch:
             "cookie": self.DEFAULT_CONFIG["COOKIE"],
             "globalcode": "ali.china.damai",
             "origin": "https://m.damai.cn",
-            "pragma": "no-cache",
             "referer": "https://m.damai.cn/",
-            "User-Agent": self.DEFAULT_CONFIG["USER_AGENT"]
-
+            "user-agent": self.DEFAULT_CONFIG["USER_AGENT"]
         }
-
-    async def open(self):
-        from aiohttp import TCPConnector
-        self.session = aiohttp.ClientSession(headers=self.headers, connector=TCPConnector(ssl=False))
-
-    async def close(self):
-        await self.session.close()
-
-    def update_default_config(self, configs=None):
-        if configs:
-            for key in self.DEFAULT_CONFIG.keys():
-                if key in configs:
-                    self.DEFAULT_CONFIG[key] = configs[key]
 
     @property
     def token(self):
         return re.search(r'_m_h5_tk=(.*?)_', self.DEFAULT_CONFIG["COOKIE"]).group(1)
 
-    async def build_order(self, buy_parma, ua, umidtoken):
-        print(self.headers)
+    def update_default_config(self, configs=None):
+        super().update_default_config(configs)
+        if not self.DEFAULT_CONFIG["COOKIE"]:
+            raise ValueError(f"{self}需要配置COOKIE")
+
+    async def open(self):
+        self.session = aiohttp.ClientSession(headers=self.headers, connector=TCPConnector(ssl=False))
+
+    async def close(self):
+        await self.session.close()
+
+    async def submit(self, buy_parma):
+        await self.open()
+        response = await self.build_order(buy_parma)
+        print(response["ret"])
+        params = make_ticket_params(response["data"])
+        response = await self.create_order(params)
+        print(response["ret"])
+        await self.close()
+
+    async def build_order(self, buy_parma):
         ep = {
             "channel": "damai_app", "damai": "1", "umpChannel": "100031004",
             "subChannel": self.DEFAULT_CONFIG["CHANNEL"], "atomSplit": '1',
             "serviceVersion": "2.0.0", "customerType": "default"
         }
-        params = {"buyNow": True, "exParams": json.dumps(ep, separators=(",", ":")),
-                  "buyParam": buy_parma, "dmChannel": self.DEFAULT_CONFIG["CHANNEL"]}
-        params = json.dumps(params, separators=(",", ":"))
+        data = {
+            "buyNow": True, "exParams": json.dumps(ep, separators=(",", ":")),
+            "buyParam": buy_parma, "dmChannel": self.DEFAULT_CONFIG["CHANNEL"]
+        }
+        data = json.dumps(data, separators=(",", ":"))
         t = timestamp()
-        sign = get_sign(self.token, t, self.DEFAULT_CONFIG["APP_KEY"], params)
-        url = f'https://mtop.damai.cn/h5/mtop.trade.order.build.h5/4.0/?jsv=2.7.2&appKey=12574478&t={t}&sign={sign}&type=originaljson&dataType=json&v=4.0&H5Request=true&AntiCreep=true&AntiFlood=true&api=mtop.trade.order.build.h5&method=POST&ttid=%23t%23ip%23%23_h5_2014&globalCode=ali.china.damai&tb_eagleeyex_scm_project=20190509-aone2-join-test'
-        data = {'data': params, 'bx-ua': ua, 'bx-umidtoken': umidtoken}
-        response = await self.session.post(url, data=data)
+        sign = get_sign(self.token, t, self.DEFAULT_CONFIG["APP_KEY"], data)
+        url = f'https://mtop.damai.cn/h5/mtop.trade.order.build.h5/4.0/?'
+        params = {
+            "jsv": "2.7.2", "appKey": self.DEFAULT_CONFIG["APP_KEY"], "t": t, "sign": sign,
+            "type": "originaljson", "dataType": "json", "v": "4.0", "H5Request": "true",
+            "AntiCreep": "true", "AntiFlood": "true", "api": "mtop.trade.order.build.h5",
+            "method": "POST", "ttid": "#t#ip##_h5_2014", "globalCode": "ali.china.damai",
+            "tb_eagleeyex_scm_project": "20190509-aone2-join-test"
+        }
+        bx_ua, bx_umidtoken = await self.ua_and_umidtoken()
+        data = {'data': data, 'bx-ua': bx_ua, 'bx-umidtoken': bx_umidtoken}
+        response = await self.session.post(url, params=params, data=data)
         return await response.json()
 
-    async def create_order(self, params, ua, umidtoken):
-        print(umidtoken)
+    async def create_order(self, data):
         t = timestamp()
-        sign = get_sign(self.token, t, self.DEFAULT_CONFIG["APP_KEY"], params)
-        url = f'https://mtop.damai.cn/h5/mtop.trade.order.create.h5/4.0/?jsv=2.7.2&appKey=12574478&t={t}&sign={sign}&v=4' \
-              f'.0&post=1&type=originaljson&timeout=15000&dataType=json&isSec=1&ecode=1&AntiCreep=true&ttid=%23t%23ip%23' \
-              f'%23_h5_2014&globalCode=ali.china.damai&tb_eagleeyex_scm_project=20190509-aone2-join-test&H5Request=true' \
-              f'&api=mtop.trade.order.create.h5'
-        data = {'data': params, 'bx-ua': ua, 'bx-umidtoken': umidtoken}
-        response = await self.session.post(url, data=data)
-        print(params)
-        print(response.request_info)
+        sign = get_sign(self.token, t, self.DEFAULT_CONFIG["APP_KEY"], data)
+        url = 'https://mtop.damai.cn/h5/mtop.trade.order.create.h5/4.0/?'
+        params = {
+            "jsv": "2.7.2", "appKey": self.DEFAULT_CONFIG["APP_KEY"], "t": t, "sign": sign, "v": "4.0",
+            "post": "1", "type": "originaljson", "timeout": "15000", "dataType": "json",
+            "isSec": "1", "ecode": "1", "AntiCreep": "true", "ttid": "#t#ip##_h5_2014",
+            "globalCode": "ali.china.damai", "tb_eagleeyex_scm_project": "20190509-aone2-join-test",
+            "H5Request": "true", "api": "mtop.trade.order.create.h5"
+        }
+        bx_ua, bx_umidtoken = await self.ua_and_umidtoken()
+        data = {'data': data, 'bx-ua': bx_ua, 'bx-umidtoken': bx_umidtoken}
+        response = await self.session.post(url, params=params, data=data)
         return await response.json()
 
+    async def ua_and_umidtoken(self) -> tuple:
+        """目前使用默认页面"""
+        page = await self.page
+        try:
+            bx_ua = await page.evaluate('this.__baxia__.postFYModule.getFYToken()')
+            bx_umidtoken = await page.evaluate('this.__baxia__.postFYModule.getUidToken()')
+            return bx_ua, bx_umidtoken
+        except ElementHandleError:
+            raise SystemExit('目前bx_ua, umidtoken需要在订单页面, 切换标签页')
+
+
+async def main():
+    cookie = 'cna=01spHfE7mkEBASQOBH1IGazq; _samesite_flag_=true; cookie2=178bc0c8bfbcdf976b60b45e45554620; t=66d4f937c8db0c40e0c90fbb1db31c9f; _tb_token_=7ee76e6eeb86b; xlly_s=1; _hvn_login=18; munb=2216041624308; csg=a1568246; _m_h5_tk=7c45e498f6fa6df924e58ec3526d7671_1688389533167; _m_h5_tk_enc=a4b5f42d0cd48a83cc32d13096305dfc; dm_nickname=%E9%BA%A6%E5%AD%904Y1dD; usercode=244681378; havanaId=2216041624308; isg=BHFxLnEesaJeJx22ruJbHZCBgP0LXuXQ1eGYVVOGhjhXepTMlq52oFDbnQ4ck30I; l=fBO-bjdRN-31vyb0BO5alurza77T5IRfCOVzaNbMiIEGa69dtFMDmNC10jm9SdtxgTCbvEKrqYn2gdUpJGadNxDDBeAHjt4KnxvO0MP9K; tfstk=d3f2cZ1yzSFVYbpzjdANzS5Ys6Av_BECo1t6SNbMlnxchCOwjNbMcFt1SFRNVG7XIoQ141SfVZZAfIia_g-5ff_f_ThNJNCbkCavMZd9skZQOC7AkCnC9_yWMLfx40EQAWNCN3Zzfk1_L8lFfoK8a2GWpX_9qsW6GZrnJhxrsX0p-KcRuAGET_823G7cQ6o9rZVc6toiIKYJzHazzzPHg71..'
+    api = ApiFetchPerformance()
+    api.update_default_config(dict(COOKIE=cookie))
+    await api.init_browser()
+    await api.submit('724811045159_1_5036084393602')
+
+
+if __name__ == '__main__':
+    asyncio.run(main())
