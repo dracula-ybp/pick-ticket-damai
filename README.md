@@ -1,7 +1,7 @@
 # pick-ticket-damai
 大麦捡漏/pyppeteer
 
-### pyppeteer模拟购票，直接请求不会解决bx-ua
+### pyppeteer模拟购票，api请求正在更新
 
 - 配置：下载谷歌浏览器，安装后在浏览器地址栏输入`chrome://version`复制"可执行文件路径"，终端启动浏览器并登录：
   ```shell
