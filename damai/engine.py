@@ -1,37 +1,29 @@
-from typing import Union, Optional
+from typing import Union
 
-from loguru import logger
-
-from damai.performer import Performance
 from damai.orderview import OrderView
 from damai.tasks import TaskManager
+
+from damai.utils import load_object
 
 
 class ExecutionEngine:
 
-    def __init__(self):
+    def __init__(self, configs):
+        self.configs = configs
         self.task = TaskManager()
         self.order = OrderView()
-        self.perform: Optional[Performance] = Performance()
+        self.perform = load_object(self.configs["PERFORM"])()
+        self.perform.update_default_config(self.configs)
 
-    def add_task(self, name: Union[int, str], concert: str,
-                 price: str, ticket_num: int):
+    def add_task(self, name: Union[int, str], concert: str, price: str, tickets: int):
         """添加异步任务至管理器
-
         name: 取决于在OrderView.add的参数
-        concert_num，price_num：分别代表场次和价位
-        ticket_num：需购数量
+        concert, price, tickets：分别代表场次 价位 需购数量
         """
         bind = self.order.views[name]
         sku_list = bind[concert]["skuList"]
-        for sku in sku_list:
-            if price == sku["priceName"]:
-                url = self.order.make_order_url(sku["itemId"], sku["skuId"], ticket_num)
-                self.task.bind_task(
-                    name,
-                    (self.perform.submit, (url, self.perform.browser.newPage, ticket_num))
-                )
-                logger.info(url)
+        sku = next(sku for sku in sku_list if price == sku["priceName"])
+        self.task.bind_task(name, (self.perform.submit, (sku["itemId"], sku["skuId"], tickets)))
 
     async def run_task(self, name):
         await self.task.run_tasks(name)

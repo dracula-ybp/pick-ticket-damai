@@ -2,7 +2,7 @@ import json
 import re
 
 import requests
-from urllib import parse
+from loguru import logger
 
 
 class OrderView:
@@ -55,19 +55,11 @@ class OrderView:
     def add(self, item_id, alias=None):
         views = {}
         for calendar in self.get_calendar_id_list(item_id):
+            logger.info(f'{item_id}/{calendar}')
             date, info = self.get_sku_info(item_id, calendar)
             views[date] = info
+        logger.debug(views)
         self._views[alias or item_id] = views
-
-    @staticmethod
-    def make_order_url(item_id, sku_id, num_tickets):
-        prefix = {"damai": "1", "channel": "damai_app", "umpChannel": "10002",
-                  "atomSplit": "1", "serviceVersion": "1.8.5"}
-        url = "https://m.damai.cn/app/dmfe/h5-ultron-buy/index.html?"
-        ex_params_str = "exParams=" + parse.quote(json.dumps(prefix, separators=(",", ":")))
-        buy_param = f'{item_id}_{num_tickets}_{sku_id}'
-        params = {'buyParam': buy_param, 'buyNow': "true", 'privilegeActId': ""}
-        return f'{url}{ex_params_str}&{parse.urlencode(params)}'
 
     def get_sell_item(self, item_id):
         url = "https://detail.damai.cn/item.htm?id={}"
@@ -76,5 +68,10 @@ class OrderView:
         start_time = int(start_time) / 1000
         item_name = re.search(r'itemName":(.*?),', response.text).group(1).replace('"', "")
         return item_name, start_time
+
+
+if __name__ == '__main__':
+    order = OrderView()
+    order.add(718335834447)
 
 

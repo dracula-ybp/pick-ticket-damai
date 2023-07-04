@@ -1,9 +1,49 @@
 import hashlib
 import json
 import time
+from importlib import import_module
+from urllib import parse
 
 
-def make_ticket_params(order_build_data):
+def dumps(obj):
+    return json.dumps(obj, separators=(",", ":"), ensure_ascii=False)
+
+
+def get_sign(token, t, app_key, data):
+    md5 = hashlib.md5()
+    md5.update((token + '&' + str(t) + '&' + str(app_key) + '&' + data).encode('utf-8'))
+    return md5.hexdigest()
+
+
+def timestamp():
+    return int(time.time() * 1000)
+
+
+def load_object(path):
+    if not isinstance(path, str):
+        if callable(path):
+            return path
+        else:
+            raise TypeError("Unexpected argument type, expected string "
+                            "or object, got: %s" % type(path))
+
+    try:
+        dot = path.rindex('.')
+    except ValueError:
+        raise ValueError(f"Error loading object '{path}': not a full path")
+
+    module, name = path[:dot], path[dot + 1:]
+    mod = import_module(module)
+
+    try:
+        obj = getattr(mod, name)
+    except AttributeError:
+        raise NameError(f"Module '{module}' doesn't define any object named '{name}'")
+
+    return obj
+
+
+def make_ticket_data(order_build_data):
     params = {}
     data_field = ['dmContactName', 'dmContactEmail', 'dmContactPhone', 'dmViewer',
                   'dmDeliverySelectCard', 'dmDeliveryAddress', 'dmPayType',
@@ -37,15 +77,11 @@ def make_ticket_params(order_build_data):
     return dumps({"params": dumps(params), "feature": feature})
 
 
-def dumps(obj):
-    return json.dumps(obj, separators=(",", ":"), ensure_ascii=False)
-
-
-def get_sign(token, t, app_key, data):
-    md5 = hashlib.md5()
-    md5.update((token + '&' + str(t) + '&' + str(app_key) + '&' + data).encode('utf-8'))
-    return md5.hexdigest()
-
-
-def timestamp():
-    return int(time.time() * 1000)
+def make_order_url(item_id, sku_id, tickets):
+    prefix = {"damai": "1", "channel": "damai_app", "umpChannel": "10002",
+              "atomSplit": "1", "serviceVersion": "1.8.5"}
+    url = "https://m.damai.cn/app/dmfe/h5-ultron-buy/index.html?"
+    ex_params_str = "exParams=" + parse.quote(json.dumps(prefix, separators=(",", ":")))
+    buy_param = f'{item_id}_{tickets}_{sku_id}'
+    params = {'buyParam': buy_param, 'buyNow': "true", 'privilegeActId': ""}
+    return f'{url}{ex_params_str}&{parse.urlencode(params)}'

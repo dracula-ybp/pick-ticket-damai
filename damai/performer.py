@@ -1,12 +1,12 @@
 import asyncio
 import re
-
-import aiohttp
 import json
 import sys
 import time
+from collections import Counter
 from typing import Optional
 
+import aiohttp
 from aiohttp import TCPConnector
 from pyppeteer.browser import Browser
 from pyppeteer.launcher import connect
@@ -15,10 +15,10 @@ from pyppeteer.errors import TimeoutError, ElementHandleError
 from loguru import logger
 
 from damai.errors import LoginError, NotElementError, CongestionError
-from damai.utils import get_sign, timestamp, make_ticket_params
+from damai.utils import get_sign, timestamp, make_ticket_data, make_order_url
 
 
-class Performance:
+class Perform:
 
     DEFAULT_CONFIG = dict(PORT=9222)
 
@@ -32,6 +32,7 @@ class Performance:
                     self.DEFAULT_CONFIG[key] = configs[key]
 
     async def init_browser(self, **config):
+        # 未开启调式浏览器时，browserURL有30s重试
         self.browser = await connect(
             browserURL=f"http://127.0.0.1:{self.DEFAULT_CONFIG['PORT']}", **config
         )
@@ -41,11 +42,11 @@ class Performance:
         pages = await self.browser.pages()
         return pages[0]
 
-    def submit(self, *args, **kwargs):
+    def submit(self, concert: str, price: str, ticket: int):
         raise NotImplementedError()
 
 
-class WebDriverPerformance:
+class WebDriverPerform(Perform):
 
     """模拟浏览器购票
 
@@ -58,32 +59,32 @@ class WebDriverPerformance:
     """
 
     DEFAULT_CONFIG = dict(
+        **Perform.DEFAULT_CONFIG,
         CRITICAL_WAIT=450, WARN_WAIT=100, SUBMIT_FREQUENCY=2,
         SHUTDOWN=60 * 10
     )
 
-    def __init__(self):
-        self.browser: Optional[Browser] = None
-
-    async def submit(self, url: str, page, ticket_num: int = 1):
+    async def submit(self, item_id, sku_id, tickets):
+        page = await self.browser.newPage()
+        url = make_order_url(item_id, sku_id, tickets)
         start = time.time()
-        page: Page = await page() if callable(page) else await page
         while True:
-            logger.info('刷新一下')
+            logger.info(f'{"*"*10}刷新{"*"*10}')
             try:
                 await asyncio.wait([page.goto(url), page.waitForNavigation()])
-                await self.select_real_name(page, ticket_num)
+                await self.select_real_name(page, tickets)
                 await page.waitFor(self.DEFAULT_CONFIG['CRITICAL_WAIT'])
                 await self.polling(page)
             except (CongestionError, NotElementError) as e:
                 logger.error(e)
                 continue
-            except LoginError:
+            except LoginError as e:
+                logger.error(e)
                 break
             except Exception as e:
                 logger.error(e)
 
-            if time.time() - start > 60 * 8:
+            if time.time() - start > self.DEFAULT_CONFIG['SHUTDOWN']:
                 return
 
     async def select_real_name(self, page, ticket_num: int = 1):
@@ -95,10 +96,10 @@ class WebDriverPerformance:
         try:
             await page.waitForSelector(selector, timeout=2000)
         except TimeoutError:
-            # 本次抢票未登录，直接结束。
+            # 本次抢票未登录，直接结束，渠道不支持的不要使用手动退出
             if await page.title() == "登录":
-                raise LoginError('未登录，重新登录启动吧，可能捡到.')
-            raise NotElementError(f'`{selector}`未找到，网络问题、出现提示框、标签改了其一')
+                raise LoginError('未登录')
+            raise NotElementError(f'`{selector}`未找到，网络问题、出现提示框、标签元素改动、渠道不支持过期其一')
         items = await page.querySelectorAll(selector)
         for num in range(0, ticket_num):
             await items[num].click()
@@ -156,14 +157,18 @@ class WebDriverPerformance:
             return "网络" in text
 
 
-class ApiFetchPerformance(Performance):
+class ApiFetchPerform(Perform):
 
     DEFAULT_CONFIG = dict(
-        **Performance.DEFAULT_CONFIG,
-        CHANNEL="damai@damaih5_h5", APP_KEY=12574478, COOKIE=None,
+        **Perform.DEFAULT_CONFIG,
+        CHANNEL="damai@damaih5_h5", APP_KEY=12574478, COOKIE=None, RETRY=10,
         USER_AGENT="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko)"
-                   " Chrome/112.0.0.0 Safari/537.36"
+                   " Chrome/112.0.0.0 Safari/537.36",
     )
+
+    def __init__(self):
+        super().__init__()
+        self.session = aiohttp.ClientSession(connector=TCPConnector(ssl=False))
 
     @property
     def headers(self):
@@ -185,20 +190,36 @@ class ApiFetchPerformance(Performance):
         if not self.DEFAULT_CONFIG["COOKIE"]:
             raise ValueError(f"{self}需要配置COOKIE")
 
-    async def open(self):
-        self.session = aiohttp.ClientSession(headers=self.headers, connector=TCPConnector(ssl=False))
+    async def submit(self, item_id, sku_id, tickets):
+        # f2中是当前知道可以直接退出的，可能存在其它项
+        f1, f2 = {"库存", "挤爆"}, {"商品信息已过期", "Session", "令牌过期"}
+        func = lambda sting: next((field for field in {*f1, *f2} if sting in field), sting)
+        counter = Counter()
+        while all(counter.get(i, 0) <= self.DEFAULT_CONFIG["RETRY"] for i in f1):
+            response = await self.build_order(f'{item_id}_{tickets}_{sku_id}')
+            logger.info(f'{response["ret"]}')
+            b_ret = response["ret"][0]
+            logger.info(f'{response["ret"]}')
+            logger.info(f'生成订单：{b_ret}')
 
-    async def close(self):
-        await self.session.close()
+            if any(i in b_ret for i in f2):
+                break
 
-    async def submit(self, buy_parma):
-        await self.open()
-        response = await self.build_order(buy_parma)
-        print(response["ret"])
-        params = make_ticket_params(response["data"])
-        response = await self.create_order(params)
-        print(response["ret"])
-        await self.close()
+            if "调用成功" not in b_ret:
+                await asyncio.sleep(5)  # test
+                continue
+
+            data = make_ticket_data(response["data"])
+            response = await self.create_order(data)
+            c_ret = response["ret"][0].split("::")[0]
+            logger.info(f"创建订单：{c_ret}")
+            logger.info(f'{response["ret"]}')
+            counter.update([func(b_ret), func(c_ret)])
+
+            if "调用成功" in c_ret:
+                logger.info("购买成功，到app订单管理中付款")
+                break
+            await asyncio.sleep(100)  # test
 
     async def build_order(self, buy_parma):
         ep = {
@@ -223,7 +244,7 @@ class ApiFetchPerformance(Performance):
         }
         bx_ua, bx_umidtoken = await self.ua_and_umidtoken()
         data = {'data': data, 'bx-ua': bx_ua, 'bx-umidtoken': bx_umidtoken}
-        response = await self.session.post(url, params=params, data=data)
+        response = await self.session.post(url, params=params, data=data, headers=self.headers)
         return await response.json()
 
     async def create_order(self, data):
@@ -239,7 +260,7 @@ class ApiFetchPerformance(Performance):
         }
         bx_ua, bx_umidtoken = await self.ua_and_umidtoken()
         data = {'data': data, 'bx-ua': bx_ua, 'bx-umidtoken': bx_umidtoken}
-        response = await self.session.post(url, params=params, data=data)
+        response = await self.session.post(url, params=params, data=data, headers=self.headers)
         return await response.json()
 
     async def ua_and_umidtoken(self) -> tuple:
@@ -250,15 +271,26 @@ class ApiFetchPerformance(Performance):
             bx_umidtoken = await page.evaluate('this.__baxia__.postFYModule.getUidToken()')
             return bx_ua, bx_umidtoken
         except ElementHandleError:
-            raise SystemExit('目前bx_ua, umidtoken需要在订单页面, 切换标签页')
+            raise SystemExit('目前bx_ua, umidtoken需要Page为订单页面, 先切换至订单页')
+
+    async def auto_jump(self):
+        """确保停留在订单页"""
+        page = await self.page
+        url = make_order_url(718335834447, 5012364593181, 1)
+        await page.goto(url)
+
+    async def close(self):
+        await self.session.close()
 
 
 async def main():
-    cookie = 'cna=01spHfE7mkEBASQOBH1IGazq; _samesite_flag_=true; cookie2=178bc0c8bfbcdf976b60b45e45554620; t=66d4f937c8db0c40e0c90fbb1db31c9f; _tb_token_=7ee76e6eeb86b; xlly_s=1; _hvn_login=18; munb=2216041624308; csg=a1568246; _m_h5_tk=7c45e498f6fa6df924e58ec3526d7671_1688389533167; _m_h5_tk_enc=a4b5f42d0cd48a83cc32d13096305dfc; dm_nickname=%E9%BA%A6%E5%AD%904Y1dD; usercode=244681378; havanaId=2216041624308; isg=BHFxLnEesaJeJx22ruJbHZCBgP0LXuXQ1eGYVVOGhjhXepTMlq52oFDbnQ4ck30I; l=fBO-bjdRN-31vyb0BO5alurza77T5IRfCOVzaNbMiIEGa69dtFMDmNC10jm9SdtxgTCbvEKrqYn2gdUpJGadNxDDBeAHjt4KnxvO0MP9K; tfstk=d3f2cZ1yzSFVYbpzjdANzS5Ys6Av_BECo1t6SNbMlnxchCOwjNbMcFt1SFRNVG7XIoQ141SfVZZAfIia_g-5ff_f_ThNJNCbkCavMZd9skZQOC7AkCnC9_yWMLfx40EQAWNCN3Zzfk1_L8lFfoK8a2GWpX_9qsW6GZrnJhxrsX0p-KcRuAGET_823G7cQ6o9rZVc6toiIKYJzHazzzPHg71..'
-    api = ApiFetchPerformance()
+    cookie = 'cna=X9YWHbUe6kACAduG3XxFaYhw; t=f3cb8c84289bba51ba0fe5c79a53f367; munb=2216041624308; damai.cn_nickName=%E9%BA%A6%E5%AD%904Y1dD; _samesite_flag_=true; cookie2=1902856fee89eaa523ae2f52ee8e5767; _tb_token_=eeee873e07a58; _hvn_login=18; xlly_s=1; csg=af0eebe2; usercode=244681378; dm_nickname=%E9%BA%A6%E5%AD%904Y1dD; havanaId=2216041624308; _m_h5_tk=4ad9095a0bb3d5f4200161063bfab504_1688466515676; _m_h5_tk_enc=27302749da84c6ccc7d7baf23f13c6e9; x5sec=7b22627579323b32223a223531373865376564626339653937353165376530656266616266313566623664434b506c6a36554745494351354c71737972546766544341304e5a6a51414d3d222c22617365727665723b32223a223238353734666661313562356437633566363639643333666462336662303837435033676a36554745494f557139377130397a31564443446b4a545441304144227d; isg=BLS04sqsbEQ6ffihd3zgkqPvhXImjdh3ZG1PEk4VTz_CuVQDdpwgB0y4OfFhQRDP; l=fBxzxh9rN2K7qslZBOfwPurza77OjIRAguPzaNbMi9fPO0fp5cpNW1s0n-T9CnGVFs3HR3lDK4dwBeYBqbh-nxvORfNi_bMmnmOk-Wf..; tfstk=doaHrjq_7koBHEIkpv3CJYzJsostRpg7z8L-e4HPbAksvU3KylcueRfQ97WQqRDaLHkU9YeuaAVqw665Ol2uZ-rKw7SWza2_30y-T2lajbM1d9_CRRhzB-yoV6M-UY28akCOkZFQO4grEtQAkwtsP45yk58LOWgSzCpPDlPIZTRPlGOcAMFN2rtI2xAoStlGliISnWkMo5aiTmKQTAY65PqixOyMbnrGqUGNwPxWVDlssxLSfIud.'
+    api = ApiFetchPerform()
     api.update_default_config(dict(COOKIE=cookie))
     await api.init_browser()
-    await api.submit('724811045159_1_5036084393602')
+    # 724811045159, 5036084393602
+    # 718335834447, 5012364593181, 1  # 过期
+    await api.submit(724811045159, 5036084393602, 1)
 
 
 if __name__ == '__main__':

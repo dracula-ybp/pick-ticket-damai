@@ -1,4 +1,4 @@
-"""目前仅支持一次添加一个任务"""
+"""目前只一次添加一个任务"""
 
 import asyncio
 import datetime
@@ -16,8 +16,7 @@ class Runner:
         if isinstance(configs, dict) or configs is None:
             self.configs = Configs(configs)
 
-        self.engine = ExecutionEngine()
-        self.engine.perform.update_default_config(self.configs)
+        self.engine = ExecutionEngine(self.configs)
 
         loop = asyncio.get_event_loop()
         loop.run_until_complete(self.engine.perform.init_browser())
@@ -45,7 +44,7 @@ class Runner:
         if d:
             date = datetime.datetime.strptime(str(d), "%Y%m%d%H%M").timestamp()
 
-        run_date = datetime.datetime.fromtimestamp(int(date) - 1)
+        run_date = datetime.datetime.fromtimestamp(date)
         if run_date >= datetime.datetime.now():
             self.single = True
             self._scheduler.add_job(self.engine.run_task, 'date', run_date=run_date,
