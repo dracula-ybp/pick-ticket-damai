@@ -1,4 +1,5 @@
 import asyncio
+import random
 import re
 import json
 import sys
@@ -25,11 +26,10 @@ class Perform:
     def __init__(self):
         self.browser: Optional[Browser] = None
 
-    def update_default_config(self, configs=None):
-        if configs:
-            for key in self.DEFAULT_CONFIG.keys():
-                if key in configs:
-                    self.DEFAULT_CONFIG[key] = configs[key]
+    def update_default_config(self, configs: dict):
+        for key in self.DEFAULT_CONFIG.keys():
+            if key in configs:
+                self.DEFAULT_CONFIG[key] = configs[key]
 
     async def init_browser(self, **config):
         # 未开启调式浏览器时，browserURL有30s重试
@@ -42,7 +42,13 @@ class Perform:
         pages = await self.browser.pages()
         return pages[0]
 
-    def submit(self, concert: str, price: str, ticket: int):
+    async def auto_jump(self):
+        """确保停留在订单页"""
+        page = await self.page
+        url = make_order_url(718335834447, 5012364593181, 1)
+        await page.goto(url)
+
+    def submit(self, item_id, sku_id, tickets):
         raise NotImplementedError()
 
 
@@ -161,14 +167,21 @@ class ApiFetchPerform(Perform):
 
     DEFAULT_CONFIG = dict(
         **Perform.DEFAULT_CONFIG,
-        CHANNEL="damai@damaih5_h5", APP_KEY=12574478, COOKIE=None, RETRY=10,
         USER_AGENT="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko)"
                    " Chrome/112.0.0.0 Safari/537.36",
+        CHANNEL="damai@damaih5_h5", APP_KEY=12574478, COOKIE=None, RETRY=10,
+        FAST=2
     )
 
     def __init__(self):
         super().__init__()
-        self.session = aiohttp.ClientSession(connector=TCPConnector(ssl=False))
+        self._session = aiohttp.ClientSession(connector=TCPConnector(ssl=False))
+
+    @property
+    def session(self):
+        if self._session.closed:
+            return aiohttp.ClientSession(connector=TCPConnector(ssl=False))
+        return self._session
 
     @property
     def headers(self):
@@ -191,35 +204,46 @@ class ApiFetchPerform(Perform):
             raise ValueError(f"{self}需要配置COOKIE")
 
     async def submit(self, item_id, sku_id, tickets):
+        """购票流程
+
+        RETRY: 退出购票的条件，当响应某个值到达一定次数将结束购票。如果能确保不出现验证码
+        可以把值配置的更高，持续时间长捡票。
+
+        当中使用了close()，当只有一个任务时无影响，当多item_id，多任务时会花费一点时间
+        创建session
+        """
         # f2中是当前知道可以直接退出的，可能存在其它项
+        # FAIL_SYS_USER_VALIDATERGV587_ERROR
         f1, f2 = {"库存", "挤爆"}, {"商品信息已过期", "Session", "令牌过期"}
-        func = lambda sting: next((field for field in {*f1, *f2} if sting in field), sting)
+        func = lambda sting: next((field for field in {*f1, *f2} if field in sting), sting)
+        fast = self.DEFAULT_CONFIG["FAST"] - 1
         counter = Counter()
-        while all(counter.get(i, 0) <= self.DEFAULT_CONFIG["RETRY"] for i in f1):
+
+        while all(counter.get(i, 0) < self.DEFAULT_CONFIG["RETRY"] for i in f1):
             response = await self.build_order(f'{item_id}_{tickets}_{sku_id}')
-            logger.info(f'{response["ret"]}')
-            b_ret = response["ret"][0]
-            logger.info(f'{response["ret"]}')
+            b_ret = ''.join(response["ret"])
             logger.info(f'生成订单：{b_ret}')
 
             if any(i in b_ret for i in f2):
+                await self.close()
                 break
 
-            if "调用成功" not in b_ret:
-                await asyncio.sleep(5)  # test
+            if "调用成功" in b_ret:
+                data = make_ticket_data(response["data"])
+                response = await self.create_order(data)
+                c_ret = ''.join(response["ret"])
+                logger.info(f"创建订单：{c_ret}")
+                counter.update([func(c_ret)])
+                if "调用成功" in c_ret:
+                    logger.info("购买成功，到app订单管理中付款")
+                    await self.close()
+                    break
+            counter.update([func(b_ret)])
+
+            if fast:
+                fast -= 1
                 continue
-
-            data = make_ticket_data(response["data"])
-            response = await self.create_order(data)
-            c_ret = response["ret"][0].split("::")[0]
-            logger.info(f"创建订单：{c_ret}")
-            logger.info(f'{response["ret"]}')
-            counter.update([func(b_ret), func(c_ret)])
-
-            if "调用成功" in c_ret:
-                logger.info("购买成功，到app订单管理中付款")
-                break
-            await asyncio.sleep(100)  # test
+            await asyncio.sleep(random.uniform(1.5, 2.5))
 
     async def build_order(self, buy_parma):
         ep = {
@@ -263,35 +287,21 @@ class ApiFetchPerform(Perform):
         response = await self.session.post(url, params=params, data=data, headers=self.headers)
         return await response.json()
 
-    async def ua_and_umidtoken(self) -> tuple:
-        """目前使用默认页面"""
+    async def ua_and_umidtoken(self) -> list:
+        """获取订单页的bx-ua， bx-umidtoken
+        return [bx-ua, bx-umidtoken]
+        """
         page = await self.page
         try:
-            bx_ua = await page.evaluate('this.__baxia__.postFYModule.getFYToken()')
-            bx_umidtoken = await page.evaluate('this.__baxia__.postFYModule.getUidToken()')
-            return bx_ua, bx_umidtoken
+            futures = (
+                page.evaluate('this.__baxia__.postFYModule.getFYToken()'),
+                page.evaluate('this.__baxia__.postFYModule.getUidToken()')
+            )
+            results = await asyncio.gather(*futures)
+            return [result for result in results]
         except ElementHandleError:
-            raise SystemExit('目前bx_ua, umidtoken需要Page为订单页面, 先切换至订单页')
-
-    async def auto_jump(self):
-        """确保停留在订单页"""
-        page = await self.page
-        url = make_order_url(718335834447, 5012364593181, 1)
-        await page.goto(url)
+            await self.session.close()
+            raise ElementHandleError('目前bx_ua, umidtoken需要Page为订单页面, 先切换至订单页')
 
     async def close(self):
         await self.session.close()
-
-
-async def main():
-    cookie = 'cna=X9YWHbUe6kACAduG3XxFaYhw; t=f3cb8c84289bba51ba0fe5c79a53f367; munb=2216041624308; damai.cn_nickName=%E9%BA%A6%E5%AD%904Y1dD; _samesite_flag_=true; cookie2=1902856fee89eaa523ae2f52ee8e5767; _tb_token_=eeee873e07a58; _hvn_login=18; xlly_s=1; csg=af0eebe2; usercode=244681378; dm_nickname=%E9%BA%A6%E5%AD%904Y1dD; havanaId=2216041624308; _m_h5_tk=4ad9095a0bb3d5f4200161063bfab504_1688466515676; _m_h5_tk_enc=27302749da84c6ccc7d7baf23f13c6e9; x5sec=7b22627579323b32223a223531373865376564626339653937353165376530656266616266313566623664434b506c6a36554745494351354c71737972546766544341304e5a6a51414d3d222c22617365727665723b32223a223238353734666661313562356437633566363639643333666462336662303837435033676a36554745494f557139377130397a31564443446b4a545441304144227d; isg=BLS04sqsbEQ6ffihd3zgkqPvhXImjdh3ZG1PEk4VTz_CuVQDdpwgB0y4OfFhQRDP; l=fBxzxh9rN2K7qslZBOfwPurza77OjIRAguPzaNbMi9fPO0fp5cpNW1s0n-T9CnGVFs3HR3lDK4dwBeYBqbh-nxvORfNi_bMmnmOk-Wf..; tfstk=doaHrjq_7koBHEIkpv3CJYzJsostRpg7z8L-e4HPbAksvU3KylcueRfQ97WQqRDaLHkU9YeuaAVqw665Ol2uZ-rKw7SWza2_30y-T2lajbM1d9_CRRhzB-yoV6M-UY28akCOkZFQO4grEtQAkwtsP45yk58LOWgSzCpPDlPIZTRPlGOcAMFN2rtI2xAoStlGliISnWkMo5aiTmKQTAY65PqixOyMbnrGqUGNwPxWVDlssxLSfIud.'
-    api = ApiFetchPerform()
-    api.update_default_config(dict(COOKIE=cookie))
-    await api.init_browser()
-    # 724811045159, 5036084393602
-    # 718335834447, 5012364593181, 1  # 过期
-    await api.submit(724811045159, 5036084393602, 1)
-
-
-if __name__ == '__main__':
-    asyncio.run(main())

@@ -18,18 +18,20 @@ class Runner:
 
         self.engine = ExecutionEngine(self.configs)
 
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(self.engine.perform.init_browser())
+        self.loop = asyncio.get_event_loop()
+        self.loop.run_until_complete(self.engine.perform.init_browser())
 
         self._scheduler = AsyncIOScheduler(timezone='Asia/Shanghai')
         self.single = False
 
     def start(self):
+        if self.configs["AUTO_JUMP"]:
+            self.loop.create_task(self.engine.perform.auto_jump())
         self._execute_accord_to_config()
         if self.single:
             self._scheduler.start()
             try:
-                asyncio.get_event_loop().run_forever()
+                self.loop.run_forever()
             except (KeyboardInterrupt, SystemExit):
                 pass
 
@@ -52,7 +54,6 @@ class Runner:
             logger.info(f'\n{name}\n抢票时间：{run_date}\n场次：{self.configs["CONCERT"]}\n'
                         f'价格：{self.configs["PRICE"]}\n数量：{self.configs["TICKET"]}')
         else:
-            asyncio.get_event_loop().run_until_complete(self.engine.run_task(item_id))
-
+            self.loop.run_until_complete(self.engine.run_task(item_id))
 
 

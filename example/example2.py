@@ -11,8 +11,9 @@ TICKETS = 1
 async def run():
     instant = WebDriverPerform()
     # instant = ApiFetchPerform()
-    await asyncio.create_task(instant.init_browser())
-    await asyncio.create_task(instant.submit(ITEM_ID, SUK_ID, TICKETS))
+    # instant.update_default_config(dict(COOKIE=''))
+    await instant.init_browser()
+    await instant.submit(ITEM_ID, SUK_ID, TICKETS)
 
 
 asyncio.run(run())

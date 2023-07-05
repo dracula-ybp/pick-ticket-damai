@@ -5,16 +5,19 @@
 ITEM_ID = 723122149049
 CONCERT = "2023-07-15"    # 场次
 PRICE = "看台317元"     # 价格串
-TICKET = 1       # 票量
+TICKET = 1       # 购票数量
 
 RUN_DATE = None    # 抢票时间，为了兼容优先购，有特权或者演出无优先购可不配置，格式：202306191220
 PORT = 9222    # 调式浏览器端口，Chrome，Edge可用
+AUTO_JUMP = 1   # 1: 开启自动跳转至订单页，0: 关闭
 
 
 """API"""
 COOKIE = None   # api请求必填
-CHANNEL = "damai@damaih5_h5"
+FAST = 2     # 快速抢票的次数，超出后会加延迟
+RETRY = 100    # 退出购票的条件，能确保不出现验证码可以把值配置的更高，持续时间长
 APP_KEY = 12574478
+CHANNEL = "damai@damaih5_h5"
 USER_AGENT = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
               " (KHTML, like Gecko) Chrome/112.0.0.0 Safari/537.36")
 
@@ -26,8 +29,9 @@ CRITICAL_WAIT = 450    # 1000=1s
 # 详见damai.performer.WebDriverPerform.polling
 WARN_WAIT = 100
 SHUTDOWN = 60 * 10    # 选票持续时间
-BATCH = False    # 批量功能，未启用
-BATCH_WAIT = 0    # 如果开启了批量，建议这个设置一个批量 >=100
+
+# BATCH = False    # 批量功能，未开发
+# BATCH_WAIT = 0    # 如果开启了批量，建议这个设置一个批量 >=100
 
 
 """System"""

@@ -43,7 +43,10 @@ def load_object(path):
     return obj
 
 
-def make_ticket_data(order_build_data):
+def make_ticket_data(order_build_data: dict):
+    """构造订单form-data，购票人数，直接按账号实名人添加的顺序，不做详细处理
+    order_build_data: 生成接口响应数据
+    """
     params = {}
     data_field = ['dmContactName', 'dmContactEmail', 'dmContactPhone', 'dmViewer',
                   'dmDeliverySelectCard', 'dmDeliveryAddress', 'dmPayType',
@@ -53,8 +56,12 @@ def make_ticket_data(order_build_data):
                  field == key or field == key.split('_')[0]}
 
     viewer = next(key for key in data_dict.keys() if key.split('_')[0] == "dmViewer")
-    data_dict[viewer]["fields"]["selectedNum"] = 1
-    data_dict[viewer]["fields"]["viewerList"][1]["isUsed"] = True
+    if not data_dict[viewer]["fields"]["viewerList"]:
+        raise ValueError("没有实名观演人")
+    buyer_total_num = data_dict[viewer]["fields"]["buyerTotalNum"]
+    data_dict[viewer]["fields"]["selectedNum"] = buyer_total_num
+    for index in range(buyer_total_num):
+        data_dict[viewer]["fields"]["viewerList"][index]["isUsed"] = True
     params['data'] = dumps(data_dict).replace('"true"', 'true')
 
     linkage = order_build_data["linkage"]
@@ -68,9 +75,11 @@ def make_ticket_data(order_build_data):
     params['hierarchy'] = dumps(hierarchy_dict)
 
     feature = dumps(
-        {"subChannel": "damai@damaih5_h5",
-         "returnUrl": "https://m.damai.cn/damai/pay-success/index.html?spm=a2o71.orderconfirm.bottom.dconfirm&sqm=dianying.h5.unknown.value",
-         "serviceVersion": "2.0.0", "dataTags": "sqm:dianying.h5.unknown.value"
+        {
+            "subChannel": "damai@damaih5_h5",
+            "returnUrl": "https://m.damai.cn/damai/pay-success/index.html?"
+                         "spm=a2o71.orderconfirm.bottom.dconfirm&sqm=dianying.h5.unknown.value",
+            "serviceVersion": "2.0.0", "dataTags": "sqm:dianying.h5.unknown.value"
          }
     )
 
@@ -78,8 +87,10 @@ def make_ticket_data(order_build_data):
 
 
 def make_order_url(item_id, sku_id, tickets):
-    prefix = {"damai": "1", "channel": "damai_app", "umpChannel": "10002",
-              "atomSplit": "1", "serviceVersion": "1.8.5"}
+    prefix = {
+        "damai": "1", "channel": "damai_app", "umpChannel": "10002",
+        "atomSplit": "1", "serviceVersion": "1.8.5"
+    }
     url = "https://m.damai.cn/app/dmfe/h5-ultron-buy/index.html?"
     ex_params_str = "exParams=" + parse.quote(json.dumps(prefix, separators=(",", ":")))
     buy_param = f'{item_id}_{tickets}_{sku_id}'
