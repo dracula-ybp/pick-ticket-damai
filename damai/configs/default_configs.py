@@ -3,7 +3,7 @@
 
 """Ticket"""
 ITEM_ID = 723122149049
-CONCERT = "2023-07-15"    # 场次
+CONCERT = "2023-07-15"    # 场次  使用yaml配置暂时加引号
 PRICE = "看台317元"     # 价格串
 TICKET = 1       # 购票数量
 
@@ -15,7 +15,7 @@ AUTO_JUMP = 1   # 1: 开启自动跳转至订单页，0: 关闭
 """API"""
 COOKIE = None   # api请求必填
 FAST = 2     # 快速抢票的次数，超出后会加延迟
-RETRY = 100    # 退出购票的条件，能确保不出现验证码可以把值配置的更高，持续时间长
+RETRY = 50    # 退出购票的条件，能确保不出现验证码可以把值配置的更高，持续时间长
 APP_KEY = 12574478
 CHANNEL = "damai@damaih5_h5"
 USER_AGENT = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"

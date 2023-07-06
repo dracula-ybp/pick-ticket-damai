@@ -52,6 +52,154 @@ class Perform:
         raise NotImplementedError()
 
 
+class ApiFetchPerform(Perform):
+
+    """接口请求购票"""
+
+    DEFAULT_CONFIG = dict(
+        **Perform.DEFAULT_CONFIG,
+        USER_AGENT="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko)"
+                   " Chrome/112.0.0.0 Safari/537.36",
+        CHANNEL="damai@damaih5_h5", APP_KEY=12574478, COOKIE=None, RETRY=50,
+        FAST=2
+    )
+
+    def __init__(self):
+        super().__init__()
+        self._session = aiohttp.ClientSession(connector=TCPConnector(ssl=False))
+
+    @property
+    def session(self):
+        if self._session.closed:
+            return aiohttp.ClientSession(connector=TCPConnector(ssl=False))
+        return self._session
+
+    @property
+    def headers(self):
+        return {
+            "content-type": "application/x-www-form-urlencoded",
+            "cookie": self.DEFAULT_CONFIG["COOKIE"],
+            "globalcode": "ali.china.damai",
+            "origin": "https://m.damai.cn",
+            "referer": "https://m.damai.cn/",
+            "user-agent": self.DEFAULT_CONFIG["USER_AGENT"]
+        }
+
+    @property
+    def token(self):
+        return re.search(r'_m_h5_tk=(.*?)_', self.DEFAULT_CONFIG["COOKIE"]).group(1)
+
+    def update_default_config(self, configs=None):
+        super().update_default_config(configs)
+        if not self.DEFAULT_CONFIG["COOKIE"]:
+            raise ValueError(f"{self}需要配置COOKIE")
+
+    async def submit(self, item_id, sku_id, tickets):
+        """购票流程
+
+        RETRY: 退出购票的条件，当响应某个值到达一定次数将结束购票。如果能确保不出现验证码
+        可以把值配置的更高，持续时间长捡票。
+
+        当中使用了close()，当只有一个任务时无影响，当多item_id，多任务时会花费一点时间
+        创建session
+        """
+        # f2中是当前知道可以直接退出的，可能存在其它项
+        f1, f2 = {"库存", "挤爆", "FAIL_SYS_USER_VALIDATE"}, {"商品信息已过期", "Session", "令牌过期"}
+        func = lambda sting: next((field for field in {*f1, *f2} if field in sting), sting)
+        fast = self.DEFAULT_CONFIG["FAST"] - 1
+        counter = Counter()
+
+        while all(counter.get(i, 0) < self.DEFAULT_CONFIG["RETRY"] for i in f1):
+            response = await self.build_order(f'{item_id}_{tickets}_{sku_id}')
+            b_ret = ' '.join(response["ret"])
+            logger.info(f'生成订单：{b_ret}')
+
+            if any(i in b_ret for i in f2):
+                await self.close()
+                break
+
+            if "调用成功" in b_ret:
+                data = make_ticket_data(response["data"])
+                response = await self.create_order(data)
+                c_ret = ' '.join(response["ret"])
+                logger.info(f"创建订单：{c_ret}")
+                counter.update([func(c_ret)])
+                if "调用成功" in c_ret:
+                    logger.info("购买成功，到app订单管理中付款")
+                    await self.close()
+                    break
+            counter.update([func(b_ret)])
+
+            if fast:
+                fast -= 1
+                continue
+            await asyncio.sleep(random.uniform(1.2, 2))
+
+    async def build_order(self, buy_parma):
+        ep = {
+            "channel": "damai_app", "damai": "1", "umpChannel": "100031004",
+            "subChannel": self.DEFAULT_CONFIG["CHANNEL"], "atomSplit": '1',
+            "serviceVersion": "2.0.0", "customerType": "default"
+        }
+        data = {
+            "buyNow": True, "exParams": json.dumps(ep, separators=(",", ":")),
+            "buyParam": buy_parma, "dmChannel": self.DEFAULT_CONFIG["CHANNEL"]
+        }
+        data = json.dumps(data, separators=(",", ":"))
+        t = timestamp()
+        sign = get_sign(self.token, t, self.DEFAULT_CONFIG["APP_KEY"], data)
+        url = f'https://mtop.damai.cn/h5/mtop.trade.order.build.h5/4.0/?'
+        params = {
+            "jsv": "2.7.2", "appKey": self.DEFAULT_CONFIG["APP_KEY"], "t": t, "sign": sign,
+            "type": "originaljson", "dataType": "json", "v": "4.0", "H5Request": "true",
+            "AntiCreep": "true", "AntiFlood": "true", "api": "mtop.trade.order.build.h5",
+            "method": "POST", "ttid": "#t#ip##_h5_2014", "globalCode": "ali.china.damai",
+            "tb_eagleeyex_scm_project": "20190509-aone2-join-test"
+        }
+        bx_ua, bx_umidtoken = await self.ua_and_umidtoken()
+        data = {'data': data, 'bx-ua': bx_ua, 'bx-umidtoken': bx_umidtoken}
+        response = await self.session.post(url, params=params, data=data, headers=self.headers)
+        return await response.json()
+
+    async def create_order(self, data):
+        t = timestamp()
+        sign = get_sign(self.token, t, self.DEFAULT_CONFIG["APP_KEY"], data)
+        url = 'https://mtop.damai.cn/h5/mtop.trade.order.create.h5/4.0/?'
+        params = {
+            "jsv": "2.7.2", "appKey": self.DEFAULT_CONFIG["APP_KEY"], "t": t, "sign": sign, "v": "4.0",
+            "post": "1", "type": "originaljson", "timeout": "15000", "dataType": "json",
+            "isSec": "1", "ecode": "1", "AntiCreep": "true", "ttid": "#t#ip##_h5_2014",
+            "globalCode": "ali.china.damai", "tb_eagleeyex_scm_project": "20190509-aone2-join-test",
+            "H5Request": "true", "api": "mtop.trade.order.create.h5"
+        }
+        bx_ua, bx_umidtoken = await self.ua_and_umidtoken()
+        data = {'data': data, 'bx-ua': bx_ua, 'bx-umidtoken': bx_umidtoken}
+        response = await self.session.post(url, params=params, data=data, headers=self.headers)
+        return await response.json()
+
+    async def ua_and_umidtoken(self) -> list:
+        """获取订单页的bx-ua， bx-umidtoken
+        return [bx-ua, bx-umidtoken]
+        """
+        page = await self.page
+        try:
+            futures = (
+                page.evaluate('this.__baxia__.postFYModule.getFYToken()'),
+                page.evaluate('this.__baxia__.postFYModule.getUidToken()')
+            )
+            results = await asyncio.gather(*futures)
+            return [result for result in results]
+        except ElementHandleError:
+            await asyncio.sleep(0.5)
+            title = await page.title()
+            logger.error(f"目前停留标签页面为：{title}")
+            await self.session.close()
+            raise ElementHandleError('bx_ua, umidtoken需要Page为订单页面, 先切换至订单页')
+
+    async def close(self):
+        await self.session.close()
+
+
 class WebDriverPerform(Perform):
 
     """模拟浏览器购票
@@ -161,147 +309,3 @@ class WebDriverPerform(Perform):
             text = text.replace("\n", "")
             logger.info(text)
             return "网络" in text
-
-
-class ApiFetchPerform(Perform):
-
-    DEFAULT_CONFIG = dict(
-        **Perform.DEFAULT_CONFIG,
-        USER_AGENT="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko)"
-                   " Chrome/112.0.0.0 Safari/537.36",
-        CHANNEL="damai@damaih5_h5", APP_KEY=12574478, COOKIE=None, RETRY=10,
-        FAST=2
-    )
-
-    def __init__(self):
-        super().__init__()
-        self._session = aiohttp.ClientSession(connector=TCPConnector(ssl=False))
-
-    @property
-    def session(self):
-        if self._session.closed:
-            return aiohttp.ClientSession(connector=TCPConnector(ssl=False))
-        return self._session
-
-    @property
-    def headers(self):
-        return {
-            "content-type": "application/x-www-form-urlencoded",
-            "cookie": self.DEFAULT_CONFIG["COOKIE"],
-            "globalcode": "ali.china.damai",
-            "origin": "https://m.damai.cn",
-            "referer": "https://m.damai.cn/",
-            "user-agent": self.DEFAULT_CONFIG["USER_AGENT"]
-        }
-
-    @property
-    def token(self):
-        return re.search(r'_m_h5_tk=(.*?)_', self.DEFAULT_CONFIG["COOKIE"]).group(1)
-
-    def update_default_config(self, configs=None):
-        super().update_default_config(configs)
-        if not self.DEFAULT_CONFIG["COOKIE"]:
-            raise ValueError(f"{self}需要配置COOKIE")
-
-    async def submit(self, item_id, sku_id, tickets):
-        """购票流程
-
-        RETRY: 退出购票的条件，当响应某个值到达一定次数将结束购票。如果能确保不出现验证码
-        可以把值配置的更高，持续时间长捡票。
-
-        当中使用了close()，当只有一个任务时无影响，当多item_id，多任务时会花费一点时间
-        创建session
-        """
-        # f2中是当前知道可以直接退出的，可能存在其它项
-        # FAIL_SYS_USER_VALIDATERGV587_ERROR
-        f1, f2 = {"库存", "挤爆"}, {"商品信息已过期", "Session", "令牌过期"}
-        func = lambda sting: next((field for field in {*f1, *f2} if field in sting), sting)
-        fast = self.DEFAULT_CONFIG["FAST"] - 1
-        counter = Counter()
-
-        while all(counter.get(i, 0) < self.DEFAULT_CONFIG["RETRY"] for i in f1):
-            response = await self.build_order(f'{item_id}_{tickets}_{sku_id}')
-            b_ret = ''.join(response["ret"])
-            logger.info(f'生成订单：{b_ret}')
-
-            if any(i in b_ret for i in f2):
-                await self.close()
-                break
-
-            if "调用成功" in b_ret:
-                data = make_ticket_data(response["data"])
-                response = await self.create_order(data)
-                c_ret = ''.join(response["ret"])
-                logger.info(f"创建订单：{c_ret}")
-                counter.update([func(c_ret)])
-                if "调用成功" in c_ret:
-                    logger.info("购买成功，到app订单管理中付款")
-                    await self.close()
-                    break
-            counter.update([func(b_ret)])
-
-            if fast:
-                fast -= 1
-                continue
-            await asyncio.sleep(random.uniform(1.5, 2.5))
-
-    async def build_order(self, buy_parma):
-        ep = {
-            "channel": "damai_app", "damai": "1", "umpChannel": "100031004",
-            "subChannel": self.DEFAULT_CONFIG["CHANNEL"], "atomSplit": '1',
-            "serviceVersion": "2.0.0", "customerType": "default"
-        }
-        data = {
-            "buyNow": True, "exParams": json.dumps(ep, separators=(",", ":")),
-            "buyParam": buy_parma, "dmChannel": self.DEFAULT_CONFIG["CHANNEL"]
-        }
-        data = json.dumps(data, separators=(",", ":"))
-        t = timestamp()
-        sign = get_sign(self.token, t, self.DEFAULT_CONFIG["APP_KEY"], data)
-        url = f'https://mtop.damai.cn/h5/mtop.trade.order.build.h5/4.0/?'
-        params = {
-            "jsv": "2.7.2", "appKey": self.DEFAULT_CONFIG["APP_KEY"], "t": t, "sign": sign,
-            "type": "originaljson", "dataType": "json", "v": "4.0", "H5Request": "true",
-            "AntiCreep": "true", "AntiFlood": "true", "api": "mtop.trade.order.build.h5",
-            "method": "POST", "ttid": "#t#ip##_h5_2014", "globalCode": "ali.china.damai",
-            "tb_eagleeyex_scm_project": "20190509-aone2-join-test"
-        }
-        bx_ua, bx_umidtoken = await self.ua_and_umidtoken()
-        data = {'data': data, 'bx-ua': bx_ua, 'bx-umidtoken': bx_umidtoken}
-        response = await self.session.post(url, params=params, data=data, headers=self.headers)
-        return await response.json()
-
-    async def create_order(self, data):
-        t = timestamp()
-        sign = get_sign(self.token, t, self.DEFAULT_CONFIG["APP_KEY"], data)
-        url = 'https://mtop.damai.cn/h5/mtop.trade.order.create.h5/4.0/?'
-        params = {
-            "jsv": "2.7.2", "appKey": self.DEFAULT_CONFIG["APP_KEY"], "t": t, "sign": sign, "v": "4.0",
-            "post": "1", "type": "originaljson", "timeout": "15000", "dataType": "json",
-            "isSec": "1", "ecode": "1", "AntiCreep": "true", "ttid": "#t#ip##_h5_2014",
-            "globalCode": "ali.china.damai", "tb_eagleeyex_scm_project": "20190509-aone2-join-test",
-            "H5Request": "true", "api": "mtop.trade.order.create.h5"
-        }
-        bx_ua, bx_umidtoken = await self.ua_and_umidtoken()
-        data = {'data': data, 'bx-ua': bx_ua, 'bx-umidtoken': bx_umidtoken}
-        response = await self.session.post(url, params=params, data=data, headers=self.headers)
-        return await response.json()
-
-    async def ua_and_umidtoken(self) -> list:
-        """获取订单页的bx-ua， bx-umidtoken
-        return [bx-ua, bx-umidtoken]
-        """
-        page = await self.page
-        try:
-            futures = (
-                page.evaluate('this.__baxia__.postFYModule.getFYToken()'),
-                page.evaluate('this.__baxia__.postFYModule.getUidToken()')
-            )
-            results = await asyncio.gather(*futures)
-            return [result for result in results]
-        except ElementHandleError:
-            await self.session.close()
-            raise ElementHandleError('目前bx_ua, umidtoken需要Page为订单页面, 先切换至订单页')
-
-    async def close(self):
-        await self.session.close()

@@ -1,4 +1,5 @@
 import json
+import pprint
 import re
 
 import requests
@@ -6,7 +7,7 @@ from loguru import logger
 
 
 class OrderView:
-    """生成演出订单url"""
+    """生成演出订单信息"""
 
     def __init__(self):
         self._views = {}
@@ -58,7 +59,8 @@ class OrderView:
             logger.info(f'{item_id}/{calendar}')
             date, info = self.get_sku_info(item_id, calendar)
             views[date] = info
-        logger.debug(views)
+        logger.debug(pprint.pformat(views))
+
         self._views[alias or item_id] = views
 
     def get_sell_item(self, item_id):
@@ -68,10 +70,5 @@ class OrderView:
         start_time = int(start_time) / 1000
         item_name = re.search(r'itemName":(.*?),', response.text).group(1).replace('"', "")
         return item_name, start_time
-
-
-if __name__ == '__main__':
-    order = OrderView()
-    order.add(718335834447)
 
 
